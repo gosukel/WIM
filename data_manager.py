@@ -86,11 +86,13 @@ def pack_database():
 
     conn = sqlite3.connect(warehouse)
     c = conn.cursor()
-
     c.execute("SELECT * FROM locations")
     loc_list = c.fetchall()
     c.execute("SELECT * FROM items")
     item_list = c.fetchall()
+    c.execute("SELECT * FROM users")
+    user_list = c.fetchall()
+    print(user_list)
     conn.commit()
     conn.close()
     if len(loc_list) != 0 and len(item_list) != 0:
@@ -98,13 +100,14 @@ def pack_database():
         return
     
     ### CREATE STARTER USER ###
-    new_pass = generate_password_hash('boss1234')
-    new_user = ('testboss', new_pass, 'testboss@twclimate.com', 100, 'Test Boss', 'TST', '024', 'master')
-    conn = sqlite3.connect(warehouse)
-    c = conn.cursor()
-    c.execute('INSERT INTO users (username, userpass, email, user_id, name_full, name_nick, branch_perms, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', new_user)
-    conn.commit()
-    conn.close()
+    if len(user_list) == 0:
+        new_pass = generate_password_hash('boss1234')
+        new_user = ('testboss', new_pass, 'testboss@twclimate.com', 100, 'Test Boss', 'TST', '024', 'master')
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute('INSERT INTO users (username, userpass, email, user_id, name_full, name_nick, branch_perms, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', new_user)
+        conn.commit()
+        conn.close()
 
     ### FILL DATABASE ###
     item_list = []
@@ -194,29 +197,58 @@ def pack_database():
             conn.close()
 
 
-def check_login(uname, upass, ubranch):
+def reset_database(note, order):
     conn = sqlite3.connect(warehouse)
     c = conn.cursor()
-    c.execute("SELECT * from users WHERE username = ?", (uname,))
-    check_user = c.fetchone()
+    c.execute("DELETE FROM items")
+    c.execute("DELETE FROM locations")
+    if note == 1:
+        c.execute("DELETE FROM notes")
+    if order == 1:    
+        c.execute("DELETE FROM orderlog")
     conn.commit()
-    conn.close()
-    # CHECK USERNAME
-    if check_user == None:
-        messagebox.showerror(title="Error", message="Username not found")
-        return False
-    # CHECK PASSWORD
-    if not check_password_hash(check_user[1], upass):
-        messagebox.showerror(title="Error", message="Incorrect Password")
-        return False
-    # CHECK BRANCH PERMISSIONS
-    branch_perms = check_user[6]
-    if ubranch != branch_perms:
-        messagebox.showerror(title="Error", message="User not allowed at this branch")
-        return False
-    # RETURN USER INFO
-    return check_user
+    conn.close()   
+    pack_database()
+    return
 
+
+def check_credentials(mode, uname='', upass='', ubranch=''):
+    if mode == 'login':
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute("SELECT * from users WHERE username = ?", (uname,))
+        check_user = c.fetchone()
+        conn.commit()
+        conn.close()
+        # CHECK USERNAME
+        if check_user == None:
+            messagebox.showerror(title="Error", message="Username not found")
+            return False
+        # CHECK PASSWORD
+        if not check_password_hash(check_user[1], upass):
+            messagebox.showerror(title="Error", message="Incorrect Password")
+            return False
+        # CHECK BRANCH PERMISSIONS
+        branch_perms = check_user[6]
+        if ubranch != branch_perms:
+            messagebox.showerror(title="Error", message="User not allowed at this branch")
+            return False
+        # RETURN USER INFO
+        return check_user
+
+    if mode == 'pass':
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute("SELECT userpass from users WHERE username = ?", (uname,))
+        check_pass = c.fetchone()[0]
+        conn.commit()
+        conn.close()
+        if not check_password_hash(check_pass, upass):
+            return False
+        return True
+
+    # new_pass = generate_password_hash('boss1234')
+    # new_user = ('testboss', new_pass, 'testboss@twclimate.com', 100, 'Test Boss', 'TST', '024', 'master')
 
 ### NOTES FOR EDIT, ADD, REMOVE USERS ###
 def edit_user_database(user_info, mode='', cur_user_info='', master_info=''):
@@ -1310,6 +1342,15 @@ def add_note(note_type, user, mode='', **kwargs):
             while xint in log_ids[0]:
                 xint = randint(10000, 99999)
 
+    ### RESET WAREHOUSE ###
+    if note_type == 'war_reset':
+        message = 'Warehouse Inventory Reset'
+        new_log = (today, note_user, note_type, 'all', 'all', message, xint)
+        c.execute("INSERT INTO notes (date, user, type, item, location, log, log_id) VALUES (?, ?, ?, ?, ?, ?, ?)", new_log)
+        conn.commit()
+        conn.close()
+        return
+
     ### SAVE NEW ORDER ###       -DONE-
     if note_type == 'order_create':
         order_box = kwargs['box']
@@ -1548,13 +1589,50 @@ def note_inquiry(note_type, mode='', **kwargs):
             change_log = temp_list[::-1]
             conn.commit()
             conn.close()
-            return change_log
-        
+            return change_log 
         
         if mode == 'search':
-            search = f"%{kwargs['search']}%"
+            temp_search = kwargs['search']
+            if temp_search == 'no order':
+                conn = sqlite3.connect(warehouse,
+                                       detect_types=sqlite3.PARSE_DECLTYPES |
+                                                    sqlite3.PARSE_COLNAMES)
+                c = conn.cursor()
+                c.execute("SELECT * FROM notes WHERE type != ?", ('order',))
+                temp_list = c.fetchall()
+                change_log = temp_list[::-1]
+                conn.commit()
+                conn.close()
+                return change_log     
+            
+            if temp_search == 'no item':
+                conn = sqlite3.connect(warehouse,
+                                       detect_types=sqlite3.PARSE_DECLTYPES |
+                                                    sqlite3.PARSE_COLNAMES)
+                c = conn.cursor()
+                c.execute("SELECT * FROM notes WHERE type != ?", ('item',))
+                temp_list = c.fetchall()
+                change_log = temp_list[::-1]
+                conn.commit()
+                conn.close()
+                return change_log     
+
+            if temp_search == 'no location' or temp_search == 'no loc':
+                conn = sqlite3.connect(warehouse,
+                                       detect_types=sqlite3.PARSE_DECLTYPES |
+                                                    sqlite3.PARSE_COLNAMES)
+                c = conn.cursor()
+                c.execute("SELECT * FROM notes WHERE type != ?", ('loc',))
+                temp_list = c.fetchall()
+                change_log = temp_list[::-1]
+                conn.commit()
+                conn.close()
+                return change_log     
+                        
+                
+            search = f"%{temp_search}%"
             conn = sqlite3.connect(warehouse,
-                                detect_types=sqlite3.PARSE_DECLTYPES |
+                                   detect_types=sqlite3.PARSE_DECLTYPES |
                                                 sqlite3.PARSE_COLNAMES)
             c = conn.cursor()
             c.execute("SELECT * FROM notes WHERE user LIKE ? OR type LIKE ? OR item LIKE ? OR location LIKE ? OR log_id LIKE ?", (search, search, search, search, search))
