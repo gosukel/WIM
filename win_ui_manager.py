@@ -4,7 +4,7 @@ from tkinter import messagebox
 import string
 import pprint
 import math
-from data_manager import check_login, warehouse_inquiry, update_item, update_location_database, add_item_to_database, update_quantities, edit_user_database, get_user_info, add_note, note_inquiry
+from data_manager import check_credentials, warehouse_inquiry, update_item, update_location_database, add_item_to_database, update_quantities, edit_user_database, get_user_info, add_note, note_inquiry, reset_database
 pp = pprint.PrettyPrinter(indent=4)
 
 
@@ -13,7 +13,7 @@ class WinWarehouse:
     def __init__(self):
         self.root = Tk()
         self.root.title('Warehouse Manager')
-        self.root.geometry('830x600')
+        self.root.geometry('1024x768')
         self.root.minsize(1024, 768)
         self.root.resizable(False, False)
         self.startup()
@@ -63,7 +63,7 @@ class WinWarehouse:
         password = user_pass.get()
         branch = user_branch.get()
         login_frames = frames
-        user_login = check_login(uname=username, upass=password, ubranch=branch)
+        user_login = check_credentials(mode='login', uname=username, upass=password, ubranch=branch)
         if user_login:
             self.user_info = user_login
             self.clear_screen(login_frames)
@@ -90,9 +90,8 @@ class WinWarehouse:
 
         app_name = Label(main_frame_top, text='Warehouse Inventory Manager', anchor='center')
         app_name.config(font=("Georgia Bold", 30))
-        app_name.grid(row=0, column=0, padx=(175,0), pady=(60, 90))
+        app_name.grid(row=0, column=0, padx=(185,0), pady=(60, 90), stick=N)
         
-
         # LEFT FRAME WITH ITEM NOTES
         main_frame_left = Frame(self.root, height=555, width=328)
         main_frame_left.grid(row=1, column=0, padx=(10,5))
@@ -102,12 +101,11 @@ class WinWarehouse:
         item_inv_btn.grid(row=0, column=0, padx=(3,0), pady=(0, 20))
         
         item_notes = warehouse_inquiry()
-        # temp_notes = note_inquiry(note_type='item', mode='all')
         item_list_var = Variable(value=item_notes)
         item_notes_box = Listbox(main_frame_left, listvariable=item_list_var, height=29, width=53, selectmode=SINGLE)
         item_notes_box.grid(row=1, column=0, padx=(3,0))
 
-        back_btn = Button(main_frame_left, text='Log Out', command=lambda: self.logout(kill_frame=(main_frame_top, main_frame_left, main_frame_center, main_frame_right)), width=15)
+        back_btn = Button(main_frame_left, text='Log Out', command=lambda: self.logout(kill_frame=(main_frame_top, main_frame_left, main_frame_center, main_frame_right)), width=17)
         back_btn.grid(row=2, column=0, stick=W, padx=(2,0), pady=(15,0))
         
         # CENTER FRAME WITH LOCATION NOTES
@@ -123,8 +121,8 @@ class WinWarehouse:
         loc_notes_box = Listbox(main_frame_center, listvariable=loc_list_var, height=29, width=53, selectmode=SINGLE)
         loc_notes_box.grid(row=1, column=0, padx=(3,0))
         
-        clog_btn = Button(main_frame_center, text='Change Log', width=15, command=self.show_changelog)
-        clog_btn.grid(row=2, column=0, sticky=N, pady=(15,0))
+        exec_func_btn = Button(main_frame_center, text='Executive Functions', width=17, command=lambda: self.executive_popup(frames=kill_frames))
+        exec_func_btn.grid(row=2, column=0, sticky=N, pady=(15,0))
 
         # RIGHT FRAME WITH ORDER NOTES
         main_frame_right = Frame(self.root, height=555, width=328)
@@ -142,40 +140,112 @@ class WinWarehouse:
             fill_tree = False
 
         order_notes_tree = ttk.Treeview(main_frame_right, height=22)
-        order_notes_tree['columns'] = ("piece", "weight", "pallet")
+        order_notes_tree['columns'] = ("details", "user")
 
         order_notes_tree.column("#0", anchor=W, width=98, stretch=NO)
-        order_notes_tree.column("piece", anchor=N, width=70, stretch=TRUE)
-        order_notes_tree.column("weight", anchor=N, width=95, stretch=TRUE)
-        order_notes_tree.column("pallet", anchor=N, width=55, stretch=TRUE)
-        # order_notes_tree.column("details", anchor=W, width=50, stretch=TRUE)
+        order_notes_tree.column("details", anchor=N, width=165, stretch=TRUE)
+        order_notes_tree.column("user", anchor=N, width=55, stretch=TRUE)
 
         order_notes_tree.heading("#0", text="Order #", anchor=N)
-        order_notes_tree.heading("piece", text="PCS", anchor=N)
-        order_notes_tree.heading("weight", text="LBS", anchor=N)
-        order_notes_tree.heading("pallet", text="PLT", anchor=N)
+        order_notes_tree.heading("details", text="Details", anchor=N)
+        order_notes_tree.heading("user", text="User", anchor=N)
+
         
         if fill_tree:
             count = 0
+            # print(order_log)
             for order in order_log:
                 temp_date = str(order[0]).split(' ')[0]
                 temp_details = order[4].split('\n')
                 pcs = temp_details[0].split(':')[1].strip()
                 lbs = temp_details[1].split(':')[1].strip()
                 plt = temp_details[2].split(':')[1].strip()
-
-                order_notes_tree.insert(parent='', index='end', iid=count, text=order[2], values=(pcs, lbs, plt))
+                detail_note = f'{pcs} pcs - {lbs} lbs - {plt} plt'
+                order_notes_tree.insert(parent='', index='end', iid=count, text=order[2], values=(detail_note, order[1]))
                 parent_num = str(count)
                 count += 1
-                order_notes_tree.insert(parent=parent_num, index='0', iid=count, text=order[1], values=('', temp_date))
-                count += 1
+                temp_items = order[3].split('\n')[:-1]
+                parent_count = 0
+                for item in temp_items:
+                    temp_split = item.split(' ')
+                    temp_item = temp_split[0].strip()
+                    temp_qty = temp_split[1].strip()
+                    order_notes_tree.insert(parent=parent_num, index=parent_count, iid=count, text=temp_date, values=(temp_item, temp_qty))
+                    count += 1
+                    parent_count += 1
 
         order_notes_tree.grid(row=1, column=0, stick=E, padx=(3,0))
 
-        user_list_button = Button(main_frame_right, text='User List', command=lambda: self.view_user_list(), width=15)
+        user_list_button = Button(main_frame_right, text='User List', command=lambda: self.view_user_list(), width=17)
         user_list_button.grid(row=2, column=0, stick=E, padx=(0,1), pady=(15,0))
 
-    def show_changelog(self):
+        kill_frames=(main_frame_top, main_frame_left, main_frame_center, main_frame_right)
+
+
+    def executive_popup(self, frames):
+        if self.user_info[-1] != 'master':
+            messagebox.showerror(title='Error', message='User does not have permission for this function')
+            return
+        
+        if self.user_info[-1] == 'master':
+            exec_box = Toplevel(self.root)
+            exec_box.geometry('280x200+500+400')
+            exec_box.title("Executive Functions")
+        
+            clog_btn = Button(exec_box, text='Change Log', width=20, command=lambda: self.show_changelog(box=exec_box))
+            clog_btn.pack(pady=(40,10))
+            
+            reset_warehouse_btn = Button(exec_box, text='Reset Warehouse', width=20, command=lambda: self.reset_warehouse_pop(box=exec_box, kill_frames=frames))
+            reset_warehouse_btn.pack(pady=10)    
+                        
+    def reset_warehouse_pop(self, box, kill_frames):
+        if not messagebox.askokcancel(title='WARNING!', message='Warning! This action cannot be undone.  Are you sure you wish to completely reset to warehouse inventory?'):
+            return
+        
+        box.destroy()
+        
+        check_pw_box = Toplevel(self.root)
+        check_pw_box.geometry('300x200')
+        check_pw_box.title('Confirm Password')
+        
+        check_pw_label = Label(check_pw_box, text='Please confirm user password')
+        check_pw_label.pack(pady=(20,5))
+        
+        check_pw_entry = Entry(check_pw_box, width=25, show='*')
+        check_pw_entry.pack(pady=(5,5))
+               
+        note_check_var = IntVar()
+        note_check = Checkbutton(check_pw_box, text='Reset Note Log:', variable=note_check_var)
+        note_check.pack(anchor=W, padx=(90,0))
+        
+        order_check_var = IntVar()
+        order_check = Checkbutton(check_pw_box, text='Reset Order Log:', variable=order_check_var)
+        order_check.pack(anchor=W, padx=(90,0), pady=(0,15))
+        
+        check_pw_btn = Button(check_pw_box, text='Submit', width=21, command=lambda: self.reset_warehouse_func(box=check_pw_box, entry=check_pw_entry, note_var=note_check_var, order_var=order_check_var, frames=kill_frames))
+        check_pw_btn.pack(pady=10)
+
+    def reset_warehouse_func(self, box, entry, note_var, order_var, frames):
+        userpass = entry.get()
+        
+        pw_check = check_credentials(mode='pass', uname=self.user_info[0], upass=userpass)
+        if not pw_check:
+            messagebox.showerror(title="Error", message="Incorrect Password")
+            return
+        if pw_check:
+            note_reset = note_var.get()
+            order_reset = order_var.get()
+            reset_database(note=note_reset, order=order_reset)
+            add_note(note_type='war_reset', user=self.user_info)
+            box.destroy()
+            self.logout(kill_frame=frames)
+            messagebox.showinfo(title='Warehouse', message='Database has been reset')
+            return
+        pass
+
+    def show_changelog(self, box):
+        box.destroy()
+        
         change_box = Toplevel(self.root)
         change_box.geometry('980x600')
         change_box.title("Change Log")        
@@ -1553,6 +1623,11 @@ class WinWarehouse:
 
     def generate_order(self, tree, order_entry):
         order_number = order_entry.get().upper()
+        order_nums = note_inquiry(note_type='order', mode='order_nums')
+        # CHECK FOR EXISTING ORDER NUMBER
+        if order_number in order_nums:
+            messagebox.showwarning(title="Error", message=f"Order Number Already Exists: {order_number}")
+            return
         order_tree = tree
         item_weight = 0
         pallet_count = 0
