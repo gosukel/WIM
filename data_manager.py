@@ -66,6 +66,7 @@ def create_database():
         type TEXT,
         item TEXT,
         location TEXT,
+        container TEXT,
         log TEXT,
         log_id INTEGER)""")
 
@@ -76,6 +77,15 @@ def create_database():
         order_num TEXT,
         order_items TEXT,
         order_notes TEXT)""")
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS containers (
+        container TEXT,
+        po_num TEXT,
+        items TEXT,
+        arrive_exp TEXT,
+        arrive_act TEXT,
+        user_note)""")
 
     conn.commit()
     conn.close() 
@@ -124,8 +134,10 @@ def pack_database():
                     item_list.append(item['itemName'])
                     conn.commit()
                     conn.close()
+                    add_note(note_type='item', mode='first_add', item=item['itemName'])
                 except Exception as e:
                     print(e)
+                    print('this is an exception')
             elif item_list.count(item['itemName']) == 1:
                 try:
                     conn = sqlite3.connect(warehouse)
@@ -139,7 +151,7 @@ def pack_database():
                     item_list.append(item['itemName'])
                     conn.commit()
                     conn.close()
-
+        
                 except Exception as e:
                     print(e)
             elif item_list.count(item['itemName']) == 2:
@@ -153,6 +165,7 @@ def pack_database():
                     item_list.append(item['itemName'])
                     conn.commit()
                     conn.close()
+                    
                 except Exception as e:
                     print(e)
             else:
@@ -169,6 +182,7 @@ def pack_database():
                 location_list.append(item['location'])
                 conn.commit()
                 conn.close()
+                add_note(note_type='loc', mode='first_add', location=item['location'])
             except Exception as e:
                 conn = sqlite3.connect(warehouse)
                 c = conn.cursor()
@@ -177,6 +191,7 @@ def pack_database():
                 location_list.append(item['location'])
                 conn.commit()
                 conn.close()
+                add_note(note_type='loc', mode='first_add', location=item['location'])
         else:
             conn = sqlite3.connect(warehouse)
             c = conn.cursor()
@@ -1325,7 +1340,46 @@ def update_quantities(xitem='', master_info=''):
     print('update complete')
 
 
-def add_note(note_type, user, mode='', **kwargs):
+def container_function(mode='add', container='', **kwargs):
+    if mode == 'add':
+        cont_num = container
+        po_num = kwargs['po_num']
+        cont_items = kwargs['items']
+        expect_date = kwargs['date']
+        cont_user = kwargs['user']
+        
+        new_cont_info = (cont_num, po_num, cont_items, expect_date)
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute('INSERT INTO containers (container, po_num, items, arrive_exp) VALUES (?, ?, ?, ?)', new_cont_info)
+        conn.commit()
+        conn.close()
+        
+        add_note(note_type='container', user=cont_user, mode='add', container=cont_num)
+        return
+    
+    if mode == 'inquiry':
+        if container == '':
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute('SELECT * FROM containers')
+            temp_list = c.fetchall()
+            conn.commit()
+            conn.close()
+            cont_log = temp_list[::-1]
+            return cont_log
+        
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute('SELECT * FROM containers WHERE container = ?', (container,))
+        temp_list = c.fetchone()
+        conn.commit()
+        conn.close()
+        return temp_list
+
+
+
+def add_note(note_type, user='master', mode='', **kwargs):
     today = datetime.now()
     note_user = user[5]
     conn = sqlite3.connect(warehouse,
@@ -1333,8 +1387,8 @@ def add_note(note_type, user, mode='', **kwargs):
                                         sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     
-    xint = randint(10000, 99999)
-    
+    xint = randint(1000000, 9999999)
+    print('adding note')
     c.execute("SELECT DISTINCT log_id FROM notes")
     log_ids = c.fetchall()
     if len(log_ids) != 0:
@@ -1342,6 +1396,16 @@ def add_note(note_type, user, mode='', **kwargs):
             while xint in log_ids[0]:
                 xint = randint(10000, 99999)
 
+    if note_type == 'container':
+        container = kwargs['container']
+        new_message = f'{container} created'
+        new_log = (today, note_user, note_type, container, new_message, xint)
+        c.execute("INSERT INTO notes (date, user, type, container, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_log)
+        conn.commit()
+        conn.close()
+        return        
+        
+        
     ### RESET WAREHOUSE ###
     if note_type == 'war_reset':
         message = 'Warehouse Inventory Reset'
@@ -1471,6 +1535,13 @@ def add_note(note_type, user, mode='', **kwargs):
             conn.close()
             print('note added')
             return
+        if mode == 'first_add':
+            item = kwargs['item']
+            new_data = (today, note_user, note_type, item, f'{item} added to warehouse', xint)
+            c.execute("INSERT INTO notes (date, user, type, item, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_data)
+            conn.commit()
+            conn.close()
+            return
         ### REMOVE ITEM ###
         if mode == 'del':
             item = kwargs['item']
@@ -1491,11 +1562,8 @@ def add_note(note_type, user, mode='', **kwargs):
             print(f'old - {old_info}')
             print(f'new - {new_info}')
             change_col = ['loc_id', 'location', 'loc_zone', 'loc_utn', 'item', 'alt_item_one', 'alt_item_two', 'item_stock', 'alt_item_one_stock', 'alt_item_two_stock']
-            # new_message = f'LOCATION EDIT {old_info[1]}'
             change_count = 0
             new_data = []
-            # new_note = (today, note_user, note_type, old_info[1], new_message, xint)
-            # c.execute("INSERT INTO notes (date, user, type, location, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_note)
             for x in range(len(old_info)):
                 if old_info[x] != new_info[x]:
                     new_message = f'{change_col[x]} CHANGED FROM {old_info[x]} TO {new_info[x]}'
@@ -1532,11 +1600,6 @@ def add_note(note_type, user, mode='', **kwargs):
                             old_item_history = c.fetchone()[0]
                         except Exception as e:
                             old_item_history = ''
-                        #     print(e)
-                        # print(f'TEMP TEMP TEMP {temp_temp_temp}')
-                        # temp_item_message = temp_temp_temp[0]
-                        # print(temp_item_message)
-                        # # temp_item_message = c.fetchone()[0]
                         if old_item_history == '':
                             new_item_history = f'{old_info[1]}'
                             c.execute("UPDATE items SET item_history = ? WHERE item = ?", (new_item_history, old_info[x]))
@@ -1560,7 +1623,19 @@ def add_note(note_type, user, mode='', **kwargs):
             c.executemany("INSERT INTO notes (date, user, type, location, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_data)
             conn.commit()
             conn.close()
-            print('note added')
+            return
+            #         item = kwargs['item']
+            # new_data = (today, note_user, note_type, item[0], f'{item[0]} added to warehouse', xint)
+            # c.execute("INSERT INTO notes (date, user, type, item, log, log_id)", new_data)
+            # conn.commit()
+            # conn.close()
+            # return
+        if mode == 'first_add':
+            new_location = kwargs['location']
+            new_data = (today, note_user, note_type, new_location, f'{new_location} added to warehouse', xint)
+            c.execute("INSERT INTO notes (date, user, type, location, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_data)
+            conn.commit()
+            conn.close()
             return
         ### REMOVE LOCATION ###
         if mode == 'del':
@@ -1696,6 +1771,32 @@ def note_inquiry(note_type, mode='', **kwargs):
             conn.commit()
             conn.close()
             return temp_list
+        
+        if mode == 'items':
+            loc = kwargs['loc']
+            conn = sqlite3.connect(warehouse,
+                                   detect_types=sqlite3.PARSE_DECLTYPES |
+                                   sqlite3.PARSE_COLNAMES)
+            c = conn.cursor()
+            c.execute("SELECT loc_history FROM locations WHERE location = ?", (loc,))
+            temp_list = c.fetchone()[0]
+            loc_list = temp_list.split(' ')       
+            conn.commit()
+            conn.close()
+            return loc_list
+
+        if mode == 'history':
+            loc = kwargs['loc']
+            conn = sqlite3.connect(warehouse,
+                                   detect_types=sqlite3.PARSE_DECLTYPES |
+                                   sqlite3.PARSE_COLNAMES)
+            c = conn.cursor()
+            c.execute("SELECT * FROM notes WHERE location = ?", (loc,))
+            temp_list = c.fetchall()
+            loc_log = temp_list[::-1]        
+            conn.commit()
+            conn.close()
+            return loc_log
 
     if note_type == 'item':
         if mode == 'all':
@@ -1731,7 +1832,7 @@ def note_inquiry(note_type, mode='', **kwargs):
             c = conn.cursor()
             c.execute("SELECT item_history FROM items WHERE item = ?", (item,))
             temp_list = c.fetchone()[0]
-            item_log = temp_list.split('\n')       
+            item_log = temp_list.split(' ')       
             conn.commit()
             conn.close()
             return item_log

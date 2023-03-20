@@ -4,7 +4,7 @@ from tkinter import messagebox
 import string
 import pprint
 import math
-from data_manager import check_credentials, warehouse_inquiry, update_item, update_location_database, add_item_to_database, update_quantities, edit_user_database, get_user_info, add_note, note_inquiry, reset_database
+from data_manager import check_credentials, warehouse_inquiry, update_item, update_location_database, add_item_to_database, update_quantities, edit_user_database, get_user_info, add_note, note_inquiry, reset_database, container_function
 pp = pprint.PrettyPrinter(indent=4)
 
 
@@ -181,7 +181,6 @@ class WinWarehouse:
 
         kill_frames=(main_frame_top, main_frame_left, main_frame_center, main_frame_right)
 
-
     def executive_popup(self, frames):
         if self.user_info[-1] != 'master':
             messagebox.showerror(title='Error', message='User does not have permission for this function')
@@ -303,7 +302,6 @@ class WinWarehouse:
             tree.delete(item)
         e = entry.get()
         if e == '':
-            print('empty')
             new_notes = note_inquiry(note_type='all', mode='all')
         if e != '':
             new_notes = note_inquiry(note_type='all', mode='search', search=e)        
@@ -724,8 +722,11 @@ class WinWarehouse:
         item_history_btn = Button(item_inv_screen_frame_right, text='Item History', command=lambda: self.item_history_menu(tree=inv_tree), width=17)
         item_history_btn.grid(row=2, column=0, stick=W)
         
-        receive_item_btn = Button(item_inv_screen_frame_right, text='Receive Items', width=17)
+        receive_item_btn = Button(item_inv_screen_frame_right, text='Receiving', width=17, command=self.receiving_window)
         receive_item_btn.grid(row=3, column=0, pady=(522,0), stick=W)
+        
+        # receive_item_btn = Button(item_inv_screen_frame_right, text='Receiving', width=17, command=self.receiving_functions)
+        # receive_item_btn.grid(row=3, column=0, pady=(522,0), stick=W)
 
     ### NOTE ###
     def edit_item(self, tree):
@@ -904,24 +905,24 @@ class WinWarehouse:
             return
         
         history_box = Toplevel(self.root)
-        history_box.geometry('600x380')
-        history_box.title("Item History")        
+        history_box.geometry('650x380')
+        history_box.title(f"{select_vals[0]} History")        
         
         left_frame = Frame(history_box)
-        left_frame.grid(row=0, column=0, padx=(15,0), pady=15, stick=N)
+        left_frame.grid(row=0, column=0, padx=(15,0), pady=5, stick=N)
 
         right_frame = Frame(history_box)
-        right_frame.grid(row=0, column=1, padx=5, pady=15)
+        right_frame.grid(row=0, column=1, padx=5, pady=5)
 
         item_locations_label = Label(left_frame, text='Location History:')
-        item_locations_label.grid(row=0, column=0, stick=E, pady=(10, 156))
+        item_locations_label.grid(row=0, column=0, stick=E, pady=(5, 156))
 
         item_history_label = Label(left_frame, text='Item History:')
         item_history_label.grid(row=1, column=0, stick=E)
 
         ### LOCATION HISTORY BOX
-        item_locations_box = Listbox(right_frame, width=75, height=9)
-        item_locations_box.grid(row=0, column=0, pady=(10, 30))
+        item_locations_box = Listbox(right_frame, width=83, height=9)
+        item_locations_box.grid(row=0, column=0, pady=(5, 30))
         item_locations = note_inquiry(note_type='item', mode='locations', item=select_vals[0])
         loc_count = 0
         for loc in item_locations:
@@ -929,19 +930,302 @@ class WinWarehouse:
             loc_count += 1
 
         ### ITEM HISTORY BOX
-        ########  CHANGE TO TREEVIEW
-        ########  CHANGE NOTES TO INSERT ROW FOR EACH INDIVIDUAL CHANGE
-        ########  ADD EACH ROW TO TREEVIEW, CAN POSSIBLY CHANGE MENU SCREEN AFTEr
-        item_history_box = Listbox(right_frame, width=75, height=9)
-        item_history_box.grid(row=1, column=0)
+        item_history_tree = ttk.Treeview(right_frame, height=7)
+        item_history_tree['columns'] = ("date", "user", "log")
+
+        item_history_tree.column("#0", width=0, stretch=NO)
+        item_history_tree.column("date", anchor=N, width=80, stretch=TRUE)
+        item_history_tree.column("user", anchor=N, width=60, stretch=TRUE)
+        item_history_tree.column("log", width=360, stretch=TRUE)
+        
+        item_history_tree.heading("#0", text="")
+        item_history_tree.heading("date", text="Date")
+        item_history_tree.heading("user", text="User")
+        item_history_tree.heading("log", text="Change Log")
+        
         item_history = note_inquiry(note_type='item', mode='history', item=select_vals[0])
-        edit_count = 0
-        for edit in item_history[::-1]:
-            temp_date = str(edit[0]).split(' ')[0]
-            new_message = f"{temp_date} - {edit[1]} - {edit[5]}"
-            item_history_box.insert(edit_count, new_message)
-            edit_count += 1
-        print(item_history)
+        count = 0
+        for item in item_history:
+            temp_date = str(item[0]).split(' ')[0]
+            item_history_tree.insert(parent='', index='end', iid=count, values=(temp_date, item[1], item[5]))
+            count += 1
+        item_history_tree.grid(row=1, column=0, stick=W)
+        view_scrollbar = ttk.Scrollbar(right_frame, orient=VERTICAL, command=item_history_tree.yview)
+        item_history_tree['yscrollcommand'] = view_scrollbar.set
+        view_scrollbar.grid(row=1, column=1, stick='ns')
+        
+### RECEIVING FUNCTIONS  
+    def receiving_functions(self):
+        if self.user_info[7] != 'master':
+            return
+        
+        rec_func_popup = Toplevel(self.root)
+        rec_func_popup.geometry('180x180+600+400')
+        rec_func_popup.title('Receiving Functions')
+        
+        create_container_btn = Button(rec_func_popup, text='Create Container', width=17, command=lambda: self.create_container_popup(box=rec_func_popup))
+        create_container_btn.pack(pady=25)
+        
+        rec_container_btn = Button(rec_func_popup, text='Receive Container', width=17)
+        rec_container_btn.pack(pady=(0,25))
+        
+        rec_history_btn = Button(rec_func_popup, text='Receiving History', width=17)
+        rec_history_btn.pack()
+    
+    
+    def receiving_window(self):
+        rec_win_popup = Toplevel(self.root)
+        rec_win_popup.geometry('700x450+600+400')
+        rec_win_popup.title('Receiving')
+        
+        ### LEFT FRAME    
+        left_rec_frame = Frame(rec_win_popup)
+        left_rec_frame.grid(row=0, rowspan=2, column=0, padx=(10,0), pady=(10,0))
+        
+        add_cont_button = Button(left_rec_frame, text='Add Container', command=lambda: self.create_container_popup(topbox=rec_win_popup))
+        add_cont_button.grid(row=0, column=0, stick=EW)
+        
+        full_cont_list = container_function(mode='inquiry')
+        cont_num_list = [item[0] for item in full_cont_list]
+        rec_lbox_var = Variable(value=cont_num_list)
+        rec_lbox = Listbox(left_rec_frame, listvariable=rec_lbox_var, width=22, height=22, selectmode=SINGLE)
+        rec_lbox.grid(row=1, column=0, pady=(5,0))
+        
+        rec_cont_button = Button(left_rec_frame, text='Receive Container')
+        rec_cont_button.grid(row=2, column=0, stick=EW, pady=(15,0))
+        
+        ### TOP CENTER FRAME
+        mid_top_rec_frame = Frame(rec_win_popup)
+        mid_top_rec_frame.grid(row=0, column=1, padx=(10,0), pady=(10,0), stick=N)
+        
+        exp_date_label = Label(mid_top_rec_frame, text='Expected Date:')
+        exp_date_label.grid(row=0, column=0, stick=E)
+        
+        exp_date_entry = Entry(mid_top_rec_frame, width=13, state=DISABLED)
+        exp_date_entry.grid(row=0, column=1, stick=W, padx=(5,15))
+        
+        act_date_label = Label(mid_top_rec_frame, text='Actual Arrival:')
+        act_date_label.grid(row=0, column=2, stick=E,)
+        
+        act_date_entry = Entry(mid_top_rec_frame, width=13, state=DISABLED)
+        act_date_entry.grid(row=0, column=3, stick=W, padx=(5,15))
+        
+        po_num_label = Label(mid_top_rec_frame, text='PO#:')
+        po_num_label.grid(row=0, column=4, stick=E,)
+        
+        po_num_entry = Entry(mid_top_rec_frame, width=20, state=DISABLED)
+        po_num_entry.grid(row=0, column=5, stick=W, padx=(5,0))
+        
+        ### BOTTOM CENTER FRAME
+        mid_bot_rec_frame = Frame(rec_win_popup)
+        mid_bot_rec_frame.grid(row=1, column=1, padx=(10,0), pady=(0,0), stick=N)
+        
+        cont_items_label = Label(mid_bot_rec_frame, text='Items:')
+        cont_items_label.grid(row=0, column=0, stick=N)
+        
+        cont_item_tree = ttk.Treeview(mid_bot_rec_frame, height=15)
+        cont_item_tree['columns'] = ('item', 'qty', 'primary', 'alt_one', 'alt_two')
+        
+        cont_item_tree.column("#0", width=0, stretch=NO)
+        cont_item_tree.column("item", anchor=W, width=150)
+        cont_item_tree.column("qty", anchor=N, width=50)
+        cont_item_tree.column("primary", anchor=N, width=98)
+        cont_item_tree.column("alt_one", anchor=N, width=98)
+        cont_item_tree.column("alt_two", anchor=N, width=98)
+        
+        cont_item_tree.heading("#0", text='')
+        cont_item_tree.heading("item", text='Item', anchor=N)
+        cont_item_tree.heading("qty", text='Qty', anchor=N)
+        cont_item_tree.heading("primary", text='Primary', anchor=N)
+        cont_item_tree.heading("alt_one", text='Alt One', anchor=N)
+        cont_item_tree.heading("alt_two", text='Alt Two', anchor=N)
+        cont_item_tree.grid(row=0, column=1, stick=N)
+        ### INSERT TO TREE
+        # count = 0
+        # for item in items:
+        #     inv_tree.insert(parent='', index='end', iid=count, values=(item[0], item[1], item[2], item[3], item[4], item[10], item[5], item[6], item[7], item[8], item[9]))
+        #     count += 1
+        # inv_tree.grid(row=0, column=0, padx=(10,3))
+        
+        def container_select(selection):
+            try:
+                cur = rec_lbox.curselection()[0]
+                exp_date_entry.config(state=NORMAL)
+                exp_date_entry.delete(0, END)
+                act_date_entry.config(state=NORMAL)
+                act_date_entry.delete(0, END)
+                po_num_entry.config(state=NORMAL)
+                po_num_entry.delete(0, END)
+                for item in cont_item_tree.get_children():
+                    cont_item_tree.delete(item)
+            except Exception as e:
+                print(e)
+                return
+            
+            select = rec_lbox.get(cur)
+            cont_details = container_function(mode='inquiry', container=select)
+            exp_date_entry.insert(0, cont_details[3])
+            exp_date_entry.config(state=DISABLED)
+            try:
+                act_date_entry.insert(0, cont_details[4])
+            except Exception as e:
+                pass
+            act_date_entry.config(state=DISABLED)
+            po_num_entry.insert(0, cont_details[1])
+            po_num_entry.config(state=DISABLED)
+            all_cont_item_split = cont_details[2].split(',')
+            count = 0
+            for item in all_cont_item_split:
+                if item != '':
+                    single_item_split = item.split('.')
+                    xitem = single_item_split[0]
+                    xqty = single_item_split[1]
+                    item_info = warehouse_inquiry(tag='item', search=xitem)
+                    primary = item_info[4]
+                    alt_one = item_info[6]
+                    alt_two = item_info[7]
+                    cont_item_tree.insert(parent='', index='end', iid=count, values=(xitem, xqty, primary, alt_one, alt_two))
+                    count += 1
+        rec_lbox.bind('<<ListboxSelect>>', container_select)        
+                
+                
+        
+        
+        
+    def create_container_popup(self, topbox):
+        main_win = topbox
+        create_container_popup = Toplevel(self.root)
+        create_container_popup.geometry('320x500+600+400')
+        create_container_popup.title('Create Container')
+        
+        
+        container_label = Label(create_container_popup, text='Container #:')
+        container_label.grid(row=0, column=0, pady=(20,10), padx=(15,3), stick=E)
+        
+        container_entry = Entry(create_container_popup, width=33)
+        container_entry.grid(row=0, column=1, columnspan=3, pady=(20,10), stick=W)
+        
+        po_num_label = Label(create_container_popup, text='PO#:')
+        po_num_label.grid(row=1, column=0, pady=(0,10), padx=(15,3), stick=E)
+        
+        po_num_entry = Entry(create_container_popup, width=33)
+        po_num_entry.grid(row=1, column=1, columnspan=3, pady=(0,10), stick=W)
+        
+        arrival_expect_label = Label(create_container_popup, text='Arrival Date:')
+        arrival_expect_label.grid(row=2, column=0, pady=(0,10), padx=(15,3), stick=E)
+
+        arrival_expect_entry = Entry(create_container_popup, width=33)
+        arrival_expect_entry.grid(row=2, column=1, columnspan=3, pady=(0,10), stick=W)
+        arrival_expect_entry.insert(0, 'ex. 05302023')
+        
+        add_item_label = Label(create_container_popup, text='Item:')
+        add_item_label.grid(row=3, column=0, pady=(35,10), padx=(15,3), stick=E)
+
+        add_item_entry = Entry(create_container_popup, width=21)
+        add_item_entry.grid(row=3, column=1, pady=(35,10), stick=W)
+        
+        add_item_qty_label = Label(create_container_popup, text='Qty:')
+        add_item_qty_label.grid(row=3, column=2, pady=(35,10), padx=(5,3))
+        
+        add_item_qty_entry = Entry(create_container_popup, width=5)
+        add_item_qty_entry.grid(row=3, column=3, pady=(35,10))
+
+        add_item_btn = Button(create_container_popup, text='Add Item To Container', command=lambda: self.add_to_container(ientry=add_item_entry, qentry=add_item_qty_entry, cont_list=item_add_tree))
+        add_item_btn.grid(row=4, column=0, columnspan=4, pady=(5, 10), padx=(15,0), stick=EW)
+        
+        # item_listbox = Listbox(create_container_popup, height=12, width=20)
+        # item_listbox.grid(row=5, column=0, columnspan=4, stick=EW, pady=(3,35), padx=(15,0))
+        
+        item_add_tree = ttk.Treeview(create_container_popup, height=8)
+        item_add_tree['columns'] = ('item', 'qty')
+        
+        item_add_tree.column("#0", width=0, stretch=NO)
+        item_add_tree.column("item", width=210, anchor=W)
+        item_add_tree.column("qty", width=60, anchor=W)
+        
+        item_add_tree.heading("#0", text='')
+        item_add_tree.heading("item", text='Item', anchor=N)
+        item_add_tree.heading("qty", text='Qty', anchor=N)
+        item_add_tree.grid(row=5, column=0, columnspan=4, pady=(3, 35), padx=(15,0))
+        
+        
+        create_container_btn = Button(create_container_popup, text='Create Container', command=lambda: self.create_container(topbox=main_win, box=create_container_popup, cont_entry=container_entry, po_entry=po_num_entry, date_entry=arrival_expect_entry, cont_list=item_add_tree))
+        create_container_btn.grid(row=6, column=0, columnspan=4, stick=EW, padx=(15,0))
+        
+    def add_to_container(self, ientry, qentry, cont_list):
+        item_list = warehouse_inquiry()
+        item_add = ientry.get().upper()
+        qty_add = qentry.get()
+        # CHECKING QTY = INT
+        try:
+            x = int(qty_add)
+        except Exception as e:
+            messagebox.showerror(title='Error', message='Qty must be a valid integer')
+            return
+        # CHECKING VALID ITEM
+        if item_add == '':
+            return
+        if item_add not in item_list:
+            messagebox.showerror(title='Error', message=f'{item_add} not currently in Database.  Please Add Item to databse first.')
+            return
+        # ADD FIRST ITEM TO TREE
+        count = len(cont_list.get_children())
+        if len(cont_list.get_children()) == 0:
+            cont_list.insert(parent='', index='end', iid=count, values=(item_add, qty_add))
+        # CHECK FOR DUPLICATES
+        cur_items = []
+        for item in cont_list.get_children():
+            cur_items.append(cont_list.item(item)['values'][0])
+        if item_add in cur_items:
+            return
+        # ADD OTHER ITEMS TO TREE
+        cont_list.insert(parent='', index='end', iid=count, values=(item_add, qty_add))
+        return
+
+        
+    def create_container(self, topbox, box, cont_entry, po_entry, date_entry, cont_list):
+        new_container = cont_entry.get().upper()
+        if new_container == '':
+            messagebox.showerror(title='Error', message='Please enter a Container # for a container, or "Transfer" for a transfer')
+            return
+        
+        new_po_num = po_entry.get().upper()
+        if new_po_num == '':
+            messagebox.showerror(title='Error', message='Please enter a PO# for a container or Transfer # for a transfer')
+            return
+        
+        expect_date = date_entry.get().upper()
+        if expect_date != '':
+            try:
+                test_date = int(expect_date)
+            except Exception as e:
+                messagebox.showerror(title='Error', message='Invalid Date Syntax.  Please use MMDDYYYY format for date')
+                print(e)
+                return
+        
+        if len(cont_list.get_children()) == 0:
+            messagebox.showerror(title='Error', message='Must receive at least one item')
+            return
+        
+        
+        cont_items_list = []
+        for item in cont_list.get_children():
+            cont_items_list.append(cont_list.item(item)['values'])
+        cont_item_log = ''    
+        for item in cont_items_list:
+            cont_item_log += f'{item[0]}.{item[1]},'
+        print(cont_item_log)
+        # return
+        
+        container_function(mode='add', container=new_container, po_num=new_po_num, items=cont_item_log, date=expect_date, user=self.user_info)
+        messagebox.showinfo(title='Done', message='Container Added')
+        box.destroy()
+        topbox.destroy()
+        self.receiving_window()
+        return
+            
+        
+
 ## LOCATION INVENTORY SCREEN FUNCTIONS
 
     def generate_location_inventory_screen(self, entry='', kill_frames=''):
@@ -962,41 +1246,41 @@ class WinWarehouse:
         location_inv_screen_frame_center.grid(row=1, column=0, padx=(10, 0))
 
         locations = warehouse_inquiry(tag='loc', search=e, mode='')
-        inv_tree = ttk.Treeview(location_inv_screen_frame_center, height=32)
-        inv_tree['columns'] = ("location", "location_zone", "location_utn", "item", "item_qty", "alt_item_one", "alt_item_one_qty", "alt_item_two", "alt_item_two_qty")
+        loc_inv_tree = ttk.Treeview(location_inv_screen_frame_center, height=32)
+        loc_inv_tree['columns'] = ("location", "location_zone", "location_utn", "item", "item_qty", "alt_item_one", "alt_item_one_qty", "alt_item_two", "alt_item_two_qty")
 
-        inv_tree.column("#0", width=0, stretch=NO)
-        inv_tree.column("location", anchor=W, width=75)
-        inv_tree.column("location_zone", anchor=W, width=70)
-        inv_tree.column("location_utn", anchor=W, width=80)
-        inv_tree.column("item", anchor=W, width=150)
-        inv_tree.column("item_qty", anchor=W, width=60)
-        inv_tree.column("alt_item_one", anchor=W, width=150)
-        inv_tree.column("alt_item_one_qty", anchor=W, width=60)  
-        inv_tree.column("alt_item_two", anchor=W, width=150)
-        inv_tree.column("alt_item_two_qty", anchor=W, width=60)
+        loc_inv_tree.column("#0", width=0, stretch=NO)
+        loc_inv_tree.column("location", anchor=W, width=75)
+        loc_inv_tree.column("location_zone", anchor=W, width=70)
+        loc_inv_tree.column("location_utn", anchor=W, width=80)
+        loc_inv_tree.column("item", anchor=W, width=150)
+        loc_inv_tree.column("item_qty", anchor=W, width=60)
+        loc_inv_tree.column("alt_item_one", anchor=W, width=150)
+        loc_inv_tree.column("alt_item_one_qty", anchor=W, width=60)  
+        loc_inv_tree.column("alt_item_two", anchor=W, width=150)
+        loc_inv_tree.column("alt_item_two_qty", anchor=W, width=60)
 
-        inv_tree.heading("#0", text="")
-        inv_tree.heading("location", text="Location", anchor=N)
-        inv_tree.heading("location_zone", text="Zone", anchor=N)
-        inv_tree.heading("location_utn", text="UTN", anchor=N)
-        inv_tree.heading("item", text="Item", anchor=N)
-        inv_tree.heading("item_qty", text="Qty", anchor=N)
-        inv_tree.heading("alt_item_one", text="Item #2", anchor=N)
-        inv_tree.heading("alt_item_one_qty", text="Qty", anchor=N)
-        inv_tree.heading("alt_item_two", text="Item #3", anchor=N)
-        inv_tree.heading("alt_item_two_qty", text="Qty", anchor=N)
+        loc_inv_tree.heading("#0", text="")
+        loc_inv_tree.heading("location", text="Location", anchor=N)
+        loc_inv_tree.heading("location_zone", text="Zone", anchor=N)
+        loc_inv_tree.heading("location_utn", text="UTN", anchor=N)
+        loc_inv_tree.heading("item", text="Item", anchor=N)
+        loc_inv_tree.heading("item_qty", text="Qty", anchor=N)
+        loc_inv_tree.heading("alt_item_one", text="Item #2", anchor=N)
+        loc_inv_tree.heading("alt_item_one_qty", text="Qty", anchor=N)
+        loc_inv_tree.heading("alt_item_two", text="Item #3", anchor=N)
+        loc_inv_tree.heading("alt_item_two_qty", text="Qty", anchor=N)
         
 
         count = 0
         for location in locations:
-            inv_tree.insert(parent='', index='end', iid=count, values=(location[1], location[2], location[3], location[4], location[7], location[5], location[8], location[6], location[9]))
+            loc_inv_tree.insert(parent='', index='end', iid=count, values=(location[1], location[2], location[3], location[4], location[7], location[5], location[8], location[6], location[9]))
             count += 1
-        inv_tree.grid(row=0, column=0)
+        loc_inv_tree.grid(row=0, column=0)
         
 
-        view_scrollbar = ttk.Scrollbar(location_inv_screen_frame_center, orient=VERTICAL, command=inv_tree.yview)
-        inv_tree['yscrollcommand'] = view_scrollbar.set
+        view_scrollbar = ttk.Scrollbar(location_inv_screen_frame_center, orient=VERTICAL, command=loc_inv_tree.yview)
+        loc_inv_tree['yscrollcommand'] = view_scrollbar.set
         view_scrollbar.grid(row=0, column=1, stick='ns')
 
         location_inv_screen_frame_right = Frame(self.root)
@@ -1007,13 +1291,13 @@ class WinWarehouse:
         add_loc_btn = Button(location_inv_screen_frame_right, text='Add Location', command=self.add_location_popup, width=17)
         add_loc_btn.grid(row=0, column=0, stick=W, pady=(0,20))
 
-        edit_location_btn = Button(location_inv_screen_frame_right, text="Edit Location", command=lambda: self.edit_location(tree=inv_tree), width=17)
+        edit_location_btn = Button(location_inv_screen_frame_right, text="Edit Location", command=lambda: self.edit_location(tree=loc_inv_tree), width=17)
         edit_location_btn.grid(row=1, column=0, stick=W, pady=(0,20))
 
-        location_history_btn = Button(location_inv_screen_frame_right, text='Location History', width=17)
+        location_history_btn = Button(location_inv_screen_frame_right, text='Location History', width=17, command=lambda: self.location_history_menu(tree=loc_inv_tree))
         location_history_btn.grid(row=2, column=0, stick=W, pady=(0,20))
         # def remove_location(self, tree):
-        remove_location_btn = Button(location_inv_screen_frame_right, text='Remove location', width=17, command=lambda: self.remove_location(tree=inv_tree))
+        remove_location_btn = Button(location_inv_screen_frame_right, text='Remove location', width=17, command=lambda: self.remove_location(tree=loc_inv_tree))
         remove_location_btn.grid(row=3, column=0, stick=W, pady=(0,20))
 
         inventory_list = warehouse_inquiry('cc')
@@ -1022,25 +1306,64 @@ class WinWarehouse:
 
         back_btn = Button(location_inv_screen_frame_center, text="Back", width=17, command=lambda: self.back_to_menu_screen(location_inv_screen_frame_top, location_inv_screen_frame_center, location_inv_screen_frame_right))
         back_btn.grid(row=1, column=0, columnspan=2, stick=W, pady=10)
-    
-    def inventory_functions_menu(self):
-        cc_menu_box = Toplevel(self.root)
-        cc_menu_box.geometry("300x300")
-        cc_menu_box.title("Inventory Functions")
+
+    def location_history_menu(self, tree):
+        loc_tree = tree
+        tree_select = loc_tree.selection()
+        select_vals = loc_tree.item(tree_select)['values']
+        print(select_vals)
+        if select_vals == "":
+            return
         
-        inventory_list = warehouse_inquiry('cc')
-        print(inventory_list)
-        cc_menu_frame = Frame(cc_menu_box)
-        cc_menu_frame.pack(padx=40, pady=50)
+        loc_history_box = Toplevel(self.root)
+        loc_history_box.geometry('650x380')
+        loc_history_box.title(f"{select_vals[0]} History")        
+        
+        left_frame = Frame(loc_history_box)
+        left_frame.grid(row=0, column=0, padx=(15,0), pady=5, stick=N)
 
-        cc_full_btn = Button(cc_menu_frame, text='Full Cycle Count', command=lambda: self.start_cycle_count(frame=cc_menu_frame, box=cc_menu_box, inventory=inventory_list), width=20)
-        cc_full_btn.pack(pady=(30,0))
+        right_frame = Frame(loc_history_box)
+        right_frame.grid(row=0, column=1, padx=5, pady=5)
 
-        add_loc_btn = Button(cc_menu_frame, text='Add Location', command=lambda: self.add_location_popup(frame=cc_menu_frame, box=cc_menu_box), width=20)
-        add_loc_btn.pack(pady=(30,0))
+        loc_item_history_label = Label(left_frame, text='Item History:')
+        loc_item_history_label.grid(row=0, column=0, stick=E, pady=(5, 156))
 
-        remove_loc_btn = Button(cc_menu_frame, text='Remove Location', command=lambda: self.remove_location_popup(frame=cc_menu_frame, box=cc_menu_box), width=20)
-        remove_loc_btn.pack(pady=(30,0))
+        loc_edit_history_label = Label(left_frame, text='Location History:')
+        loc_edit_history_label.grid(row=1, column=0, stick=E)
+
+        ### LOCATION ITEMS HISTORY BOX
+        loc_item_history_box = Listbox(right_frame, width=83, height=9)
+        loc_item_history_box.grid(row=0, column=0, pady=(5, 30))
+        loc_item_list = note_inquiry(note_type='loc', mode='items', loc=select_vals[0])
+        loc_count = 0
+        for loc in loc_item_list:
+            loc_item_history_box.insert(loc_count, loc)
+            loc_count += 1
+            
+        ### LOCATION HISTORY BOX
+        loc_history_tree = ttk.Treeview(right_frame, height=7)
+        loc_history_tree['columns'] = ("date", "user", "log")
+
+        loc_history_tree.column("#0", width=0, stretch=NO)
+        loc_history_tree.column("date", anchor=N, width=80, stretch=TRUE)
+        loc_history_tree.column("user", anchor=N, width=60, stretch=TRUE)
+        loc_history_tree.column("log", width=360, stretch=TRUE)
+        
+        loc_history_tree.heading("#0", text="")
+        loc_history_tree.heading("date", text="Date")
+        loc_history_tree.heading("user", text="User")
+        loc_history_tree.heading("log", text="Change Log")
+        
+        loc_history = note_inquiry(note_type='loc', mode='history', loc=select_vals[0])
+        count = 0
+        for note in loc_history:
+            temp_date = str(note[0]).split(' ')[0]
+            loc_history_tree.insert(parent='', index='end', iid=count, values=(temp_date, note[1], note[5]))
+            count += 1
+        loc_history_tree.grid(row=1, column=0, stick=W)
+        view_scrollbar = ttk.Scrollbar(right_frame, orient=VERTICAL, command=loc_history_tree.yview)
+        loc_history_tree['yscrollcommand'] = view_scrollbar.set
+        view_scrollbar.grid(row=1, column=1, stick='ns')
 
     def remove_location_popup(self):
         temp_remove_loc_box = Toplevel(self.root)
@@ -1682,8 +2005,8 @@ class WinWarehouse:
         order_list = note_inquiry(note_type='order', mode='order_nums')
         print(order_list)
 
-        if not order_list:
-            return
+        # if not order_list:
+        #     return
 
         history_box = Toplevel(self.root)
         history_box.geometry('400x400')
