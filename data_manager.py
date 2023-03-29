@@ -1057,8 +1057,140 @@ def add_item_to_database(box, item, inum, itype, ibrand, iloc, iweight, ipallet,
     box.destroy()
 
 
+def receive_item_to_database(master_info, rec_info):
+    item_num = rec_info[0]
+    rec_qty = rec_info[2] + rec_info[4] + rec_info[6]
+    temp_rec_locations = [rec_info[1], rec_info[3], rec_info[5]]
+    temp_rec_qtys = [rec_info[2], rec_info[4], rec_info[6]]
+    rec_locations = [temp_rec_locations[x] for x in range(len(temp_rec_locations)) if temp_rec_locations[x] != '' and temp_rec_qtys[x] != 0 and temp_rec_qtys[x] !='']
+    cur_item_info = warehouse_inquiry(tag='item', search=item_num)
+    new_total_qty = rec_qty + cur_item_info[9]
+    locations_add = [location for location in rec_locations if location not in cur_item_info]
+    if len(locations_add) == 0:
+        new_info = (new_total_qty, item_num)
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute("UPDATE items SET onhand = ? WHERE item = ?", new_info)
+        conn.commit()
+        conn.close()
+        return
+    if len(locations_add) > 0:
+        for loc in locations_add:
+            # check primary location
+            if cur_item_info[4] == '':
+                loc_id = warehouse_inquiry(tag='loc_id', mode='s', location=loc)
+                new_info = (loc, loc_id, new_total_qty, item_num)
+                conn = sqlite3.connect(warehouse)
+                c = conn.cursor()
+                c.execute("UPDATE items SET location = ?, loc_id = ?, onhand = ? WHERE item = ?", new_info)
+                conn.commit()
+                conn.close()
+                return
+            # check alt_loc_one
+            elif cur_item_info[6] == '':
+                new_info = (loc, new_total_qty, item_num)
+                conn = sqlite3.connect(warehouse)
+                c = conn.cursor()
+                c.execute("UPDATE items SET alt_location_one = ?, onhand = ? WHERE item = ?", new_info)
+                conn.commit()
+                conn.close()
+                return
+            # check alt_loc_two
+            elif cur_item_info[7] == '':
+                new_info = (loc, new_total_qty, item_num)
+                conn = sqlite3.connect(warehouse)
+                c = conn.cursor()
+                c.execute("UPDATE items SET alt_location_two = ?, onhand = ? WHERE item = ?", new_info)
+                conn.commit()
+                conn.close()
+                return
+            else:
+                messagebox.showerror(title='Error', message=f'{item_num} is already assigned to max locations.  Did not update Items Database.')
+                return
+
+    
+    pass
+
+
 ### NEED TO PROPERLY ADD NOTES FOR EACH LOCATION EDIT
 def update_location_database(master_info='', box='', location_info='', primary_vars='', mode='', edit_list='', **kwargs):
+    if mode == 'rec':
+        rec_info = kwargs['rec_info']
+        # prep data
+        item_num = rec_info[0]
+        location_targets = [rec_info[1], rec_info[3], rec_info[5]]
+        location_target_qtys = [rec_info[2], rec_info[4], rec_info[6]]
+        bad_qtys = ['', 0]
+        # loop through location data
+        for x in range(len(location_targets)):
+            if location_targets[x] != '' and location_target_qtys[x] not in bad_qtys:
+                temp_loc_info = warehouse_inquiry(tag='loc_info', location=location_targets[x], item='')
+                # if item is currently in location
+                if item_num in temp_loc_info:
+                    # if item is in main slot
+                    if temp_loc_info[4] == item_num:
+                        new_loc_qty = temp_loc_info[7] + location_target_qtys[x]
+                        new_info = (new_loc_qty, location_targets[x])
+                        conn = sqlite3.connect(warehouse)
+                        c = conn.cursor()
+                        c.execute("UPDATE locations SET item_stock = ? WHERE location = ?", new_info)
+                        conn.commit()
+                        conn.close()
+                    # if item is in alt_one slot
+                    elif temp_loc_info[5] == item_num:
+                        new_loc_qty = temp_loc_info[8] + location_target_qtys[x]
+                        new_info = (new_loc_qty, location_targets[x])
+                        conn = sqlite3.connect(warehouse)
+                        c = conn.cursor()
+                        c.execute("UPDATE locations SET alt_item_one_stock = ? WHERE location = ?", new_info)
+                        conn.commit()
+                        conn.close()                
+                    # if item is in alt_two slot
+                    elif temp_loc_info[6] == item_num:
+                        new_loc_qty = temp_loc_info[9] + location_target_qtys[x]
+                        new_info = (new_loc_qty, location_targets[x])
+                        conn = sqlite3.connect(warehouse)
+                        c = conn.cursor()
+                        c.execute("UPDATE locations SET alt_item_two_stock = ? WHERE location = ?", new_info)
+                        conn.commit()
+                        conn.close()                
+                    print(temp_loc_info)
+                # if item not currently in location
+                else:
+                    # if main slot is empty
+                    if temp_loc_info[4] == '':
+                        new_info = (item_num, location_target_qtys[x], location_targets[x])
+                        conn = sqlite3.connect(warehouse)
+                        c = conn.cursor()
+                        c.execute("UPDATE locations SET item = ?, item_stock = ? WHERE location = ?", new_info)
+                        conn.commit()
+                        conn.close()                        
+                        pass
+                    # if alt_one slot is empty
+                    elif temp_loc_info[5] == '':
+                        new_info = (item_num, location_target_qtys[x], location_targets[x])
+                        conn = sqlite3.connect(warehouse)
+                        c = conn.cursor()
+                        c.execute("UPDATE locations SET alt_item_one = ?, alt_item_one_stock = ? WHERE location = ?", new_info)
+                        conn.commit()
+                        conn.close()
+                    # if alt_two slot is empty
+                    elif temp_loc_info[6] == '':
+                        new_info = (item_num, location_target_qtys[x], location_targets[x])
+                        conn = sqlite3.connect(warehouse)
+                        c = conn.cursor()
+                        c.execute("UPDATE locations SET alt_item_two = ?, alt_item_two_stock = ? WHERE location = ?", new_info)
+                        conn.commit()
+                        conn.close()
+                    else:
+                        messagebox.showerror(title='Error', message='Location is currently full.  Did not add item to locations table')
+                        
+        ###check if item is in location
+        ### add
+        ###
+        pass
+    
+    
     if mode == 'cc':
         print(f'updating {location_info}')
         new_info = (primary_vars[0], primary_vars[1], primary_vars[2], location_info)
@@ -1376,7 +1508,55 @@ def container_function(mode='add', container='', **kwargs):
         conn.commit()
         conn.close()
         return temp_list
-
+    
+    if mode == 'receive':
+        cont_num = container
+        date = kwargs['date']
+        rec_info = kwargs['rec_info']
+        user = kwargs['user']
+        user_note = f"{user[5]} received container {date}\n"
+        for item in rec_info:
+            # if prim/altone/alttwo are provided with qtys
+            if item[3] != '' and item[4] != 0  and item[5] != '' and item[6] != 0:
+                user_note += f'{item[0]} - x{item[2]} received to {item[1]}\n{item[0]} - x{item[4]} received to {item[3]}\n{item[0]} - x{item[6]} received to {item[5]}\n'
+            # if prim/altone are provided with qtys
+            elif item[3] != '' and item[4] != 0 and item[5] == '':
+                user_note += f'{item[0]} - x{item[2]} received to {item[1]}\n{item[0]} - x{item[4]} received to {item[3]}\n'
+            # else just use prim and prim qty
+            else:
+                user_note += f'{item[0]} - x{item[2]} received to {item[1]}\n'
+            # if item[3] == '' and item[5] == '':
+            #     user_note += f'{item[0]} - x{item[2]} received to {item[1]}\n'
+            # elif item[3] != '' and item[4] != 0 and item[5] == '':
+            #     user_note += f'{item[0]} - x{item[2]} received to {item[1]}\n{item[0]} - x{item[4]} received to {item[3]}\n'
+            # elif item[3] != '' and item[4] != 0  and item[5] != '' and item[6] != 0:
+            #     user_note += f'{item[0]} - x{item[2]} received to {item[1]}\n{item[0]} - x{item[4]} received to {item[3]}\n{item[0]} - x{item[6]} received to {item[5]}\n'
+            # else:
+            #     print('some fucky shit is happening')
+        new_info = (date, user_note, cont_num)
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute('UPDATE containers SET arrive_act = ?, user_note = ? WHERE container = ?', new_info)
+        conn.commit()
+        conn.close()
+        add_note(note_type='container', user=user, mode='rec', container=cont_num, notes=user_note)
+        
+    if mode == 'add_note':
+        cont_num = container
+        cur_notes = kwargs['cur_note']
+        new_note_temp = kwargs['new_note'].get()
+        note_box = kwargs['note_box']
+        new_note = cur_notes + f"{new_note_temp}\n"                        
+        new_info = (new_note, cont_num)
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute('UPDATE containers SET user_note = ? WHERE container = ?', new_info)
+        conn.commit()
+        conn.close()
+        note_box.destroy()
+        messagebox.showinfo(title='Done', message='Note Added')
+        return
+        
 
 
 def add_note(note_type, user='master', mode='', **kwargs):
@@ -1397,13 +1577,42 @@ def add_note(note_type, user='master', mode='', **kwargs):
                 xint = randint(10000, 99999)
 
     if note_type == 'container':
-        container = kwargs['container']
-        new_message = f'{container} created'
-        new_log = (today, note_user, note_type, container, new_message, xint)
-        c.execute("INSERT INTO notes (date, user, type, container, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_log)
-        conn.commit()
-        conn.close()
-        return        
+        if mode == 'add':
+            container = kwargs['container']
+            new_message = f'{container} created'
+            new_log = (today, note_user, note_type, container, new_message, xint)
+            c.execute("INSERT INTO notes (date, user, type, container, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_log)
+            conn.commit()
+            conn.close()
+            return        
+        
+        if mode == 'rec':
+            container = kwargs['container']
+            temp_notes = kwargs['notes']
+            note_add_list = []
+            notes_split = temp_notes.split('\n')
+            # print(temp_notes)
+            # print(notes_split)
+            
+            for note in notes_split[1:-1]:
+                split_note = note.split('-')
+                print(split_note)
+                if len(split_note) == 0:
+                    break
+                item = split_note[0].strip()
+                item_note = split_note[1].strip()
+                item_loc = item_note.split(' ')[-1]
+                item_qty = item_note.split(' ')[0]
+                # if item_qty == 'x0':
+                #     continue
+                print(f'item: {item}')
+                print(f'item note: {item_note}')
+                print(f'item loc: {item_loc}')
+                new_log = (today, note_user, note_type, item, item_loc, item_note, container, xint)
+                c.execute("INSERT INTO notes (date, user, type, item, location, log, container, log_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", new_log)
+            conn.commit()
+            conn.close()
+            return
         
         
     ### RESET WAREHOUSE ###
@@ -1710,7 +1919,7 @@ def note_inquiry(note_type, mode='', **kwargs):
                                    detect_types=sqlite3.PARSE_DECLTYPES |
                                                 sqlite3.PARSE_COLNAMES)
             c = conn.cursor()
-            c.execute("SELECT * FROM notes WHERE user LIKE ? OR type LIKE ? OR item LIKE ? OR location LIKE ? OR log_id LIKE ?", (search, search, search, search, search))
+            c.execute("SELECT * FROM notes WHERE user LIKE ? OR type LIKE ? OR item LIKE ? OR location LIKE ? OR log_id LIKE ? OR container LIKE ?", (search, search, search, search, search, search))
             temp_list = c.fetchall()
             change_log = temp_list[::-1]
             conn.commit()
@@ -1798,6 +2007,7 @@ def note_inquiry(note_type, mode='', **kwargs):
             conn.close()
             return loc_log
 
+
     if note_type == 'item':
         if mode == 'all':
             conn = sqlite3.connect(warehouse,
@@ -1836,7 +2046,21 @@ def note_inquiry(note_type, mode='', **kwargs):
             conn.commit()
             conn.close()
             return item_log
-    pass
+    
+    
+    if note_type == 'container':
+        if mode == 'note':
+            cont_num = kwargs['container']
+            conn = sqlite3.connect(warehouse,
+                                   detect_types=sqlite3.PARSE_DECLTYPES |
+                                   sqlite3.PARSE_COLNAMES)
+            c = conn.cursor()
+            c.execute("SELECT user_note FROM containers WHERE container = ?", (cont_num,))
+            temp_note = c.fetchone()[0]
+            # item_log = temp_list[::-1]        
+            conn.commit()
+            conn.close()
+            return temp_note            
 
     
 
