@@ -6,6 +6,9 @@ from datetime import datetime
 import string
 import pprint
 import math
+import requests as rq
+import time
+from math import ceil
 from data_manager import check_credentials, warehouse_inquiry, update_item, update_location_database, add_item_to_database, update_quantities, edit_user_database, get_user_info, add_note, note_inquiry, reset_database, container_function, receive_item_to_database
 pp = pprint.PrettyPrinter(indent=4)
 
@@ -21,6 +24,12 @@ class WinWarehouse:
         self.startup()
         # print(font.nametofont('TkTextFont').actual())
         self.user_info = ''
+        self.loc_cur_sheet = "https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/locations"
+        self.loc_new_sheet = "https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/locationsnew"
+        self.item_cur_sheet = "https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/items"
+        self.item_new_sheet = "https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/itemsnew"
+        
+        
         today = datetime.now()
         self.date = today.strftime('%m%d%Y')
         self.root.mainloop()
@@ -197,11 +206,154 @@ class WinWarehouse:
             exec_box.title("Executive Functions")
         
             clog_btn = Button(exec_box, text='Change Log', width=20, command=lambda: self.show_changelog(box=exec_box))
-            clog_btn.pack(pady=(40,10))
+            clog_btn.pack(pady=(35,10))
             
             reset_warehouse_btn = Button(exec_box, text='Reset Warehouse', width=20, command=lambda: self.reset_warehouse_pop(box=exec_box, kill_frames=frames))
             reset_warehouse_btn.pack(pady=10)    
+            
+            upload_btn = Button(exec_box, text='Upload Database', width=20, command=self.upload_database_window)
+            upload_btn.pack(pady=10)
+    
+    def upload_database_window(self):
+        # check_loc = rq.get(self.loc_new_sheet).json()['locationsnew']
+        # check_items = rq.get(self.item_new_sheet).json()['itemsnew']
+        
+        upload_window = Toplevel(self.root)
+        upload_window.geometry("400x380+500+400")
+        upload_window.title("Upload Database")
+        
+        upload_frame = Frame(upload_window)
+        upload_frame.grid(row=0, column=0, padx=(20,0), pady=10)
+        
+        upload_listbox = Listbox(upload_frame, height=18, width=58)
+        upload_listbox.grid(row=0, column=0)
+
+        status_label = Label(upload_frame, text='Ready')
+        status_label.grid(row=1, column=0, stick=E)
+        
+        upload_win_button = Button(upload_frame, text='Start Upload', command=lambda: self.upload_database(stat_label=status_label, up_btn=upload_win_button, up_lbox=upload_listbox), width=15)
+        upload_win_button.grid(row=2, column=0, stick=N)
+
+    
+    def upload_database(self, stat_label, up_btn, up_lbox):
+        check_loc = rq.get(self.loc_new_sheet).json()['locationsnew']
+        check_items = rq.get(self.item_new_sheet).json()['itemsnew']
+        loc_list = warehouse_inquiry(tag='loc', mode='update_spread')
+        item_list = warehouse_inquiry(tag='item_inv')
+        
+        def update_loc_spread(mode, loc_info='', cur_info=''):
+            if mode == 'delete':
+                # check if already empty
+                if len(cur_info) == 0:
+                    up_lbox.insert(END, f"Locations Empty")
+                    return
+                
+                r = cur_info
+                repeat = True
+                cycle_count = 1
+                while repeat:
+                    x = 2
+                    up_lbox.insert(END, f"Location Delete Cycle: {cycle_count}/10")
+                    for row in r:
+                        endpoint = f"{self.loc_new_sheet}/{x}"
+                        response = rq.delete(url=endpoint)
+                        x += 1
+                        time.sleep(.5)
+                    r = rq.get(self.loc_new_sheet).json()['locationsnew']
+                    if len(r) == 0:
+                        repeat = False
+                        up_lbox.insert(END, f"Finished Deleting Locations")
+                    else:
+                        cycle_count += 1
+                        # up_lbox.insert(END, f"Location Delete Cycle: {cycle_count}/10")
+            if mode == 'add':
+                stat_label.config(text="Location Upload: 0%")
+                loc_list = loc_info
+                max_len = len(loc_info)
+                prog_counter = 0
+                up_lbox.insert(END, f"Starting Location Upload")
+                for row in loc_list:
+                    to_add = {
+                        "locationsnew": {
+                            "location": row[1],
+                            "zone": row[2],
+                            "locUtn": row[3],
+                            "locId": row[0]
+                        }
+                    }
+                    response = rq.post(url=self.loc_new_sheet, json=to_add)
+                    up_lbox.insert(END, f"{row[1]} added")
+                    prog_counter += 1
+                    prog_percent = ceil(prog_counter/max_len*100)
+                    stat_label.config(text=f"Location Upload: {prog_percent}%")
+                    time.sleep(0.5)
+                up_lbox.insert(END, f"Location Upload Complete")
+                
+        
+        def update_item_spread(mode, item_info='', cur_info=''):
+            if mode == 'delete':
+                
+                if len(cur_info) == 0:
+                    up_lbox.insert(END, f"Items Empty")
+                
+                r = cur_info
+                repeat = True
+                cycle_count = 1
+                while repeat:
+                    x = 2
+                    up_lbox.insert(END, f"Item Delete Cycle: {cycle_count}/10")
+                    for row in r:
+                        endpoint = f"{self.item_new_sheet}/{x}"
+                        response = rq.delete(url=endpoint)
+                        x += 1
+                        time.sleep(.5)
+                    r = rq.get(self.item_new_sheet).json()['itemsnew']
+                    if len(r) == 0:
+                        repeat = False
+                        up_lbox.insert(END, f"Finished Deleting Items")
+                    else:
+                        cycle_count += 1
+                    
                         
+            if mode == 'add':
+                stat_label.config(text="Item Upload: 0%")
+                item_list = item_info
+                max_len = len(item_info)
+                prog_counter = 0
+                up_lbox.insert(END, f"Starting Item Upload")
+                for item in item_list:
+                    to_add = {
+                        "itemsnew": {
+                            "location": item[4],
+                            "itemName": item[0],
+                            "brand": item[3],
+                            "type": item[2],
+                            "itemNumber": item[1],
+                            "weight": item[8],
+                            "fullPallet": item[9],
+                            "onHand": item[7],
+                            "altLocationOne": item[5],
+                            "altLocationTwo": item[6]
+                        }
+                    }
+                    response = rq.post(url=self.item_new_sheet, json=to_add)
+                    up_lbox.insert(END, f"{item[0]} added")
+                    prog_counter += 1
+                    prog_percent = ceil(prog_counter/max_len*100)
+                    stat_label.config(text=f"Item Upload: {prog_percent}%")
+                    time.sleep(0.5)
+                up_lbox.insert(END, f"Item Upload Complete")                
+            pass
+        
+        
+        update_loc_spread(mode='delete', cur_info=check_loc)
+        time.sleep(2)
+        update_item_spread(mode='delete', cur_info=check_items)
+        time.sleep(2)
+        update_loc_spread(mode='add', loc_info=loc_list)
+        time.sleep(2)
+        update_item_spread(mode='add', item_info=item_list)                       
+                    
     def reset_warehouse_pop(self, box, kill_frames):
         if not messagebox.askokcancel(title='WARNING!', message='Warning! This action cannot be undone.  Are you sure you wish to completely reset to warehouse inventory?'):
             return
@@ -305,7 +457,7 @@ class WinWarehouse:
         else:
             for index, row in enumerate(change_log):
                 temp_date = str(row[0]).split(' ')[0]
-                temp_value = [temp_date, row[1], row[2], row[3], row[4], row[7], row[5], row[6]]
+                temp_value = [temp_date, row[1], row[2], row[3], row[4], row[5], row[6], row[7]]
                 change_log_tree.insert('', 'end', iid=index, text='', values=temp_value)  
 
     def search_log(self, box, tree, entry):
@@ -318,7 +470,7 @@ class WinWarehouse:
             new_notes = note_inquiry(note_type='all', mode='search', search=e)        
         for index, row in enumerate(new_notes):
             temp_date = str(row[0]).split(' ')[0]
-            temp_value = [temp_date, row[1], row[2], row[3], row[4], row[7], row[5], row[6]]
+            temp_value = [temp_date, row[1], row[2], row[3], row[4], row[5], row[6], row[7]]
             tree.insert('', 'end', iid=index, text='', values=temp_value)
 
     def view_user_list(self, box=''):
@@ -955,10 +1107,11 @@ class WinWarehouse:
         item_history_tree.heading("log", text="Change Log")
         
         item_history = note_inquiry(note_type='item', mode='history', item=select_vals[0])
+        print(item_history)
         count = 0
         for item in item_history:
             temp_date = str(item[0]).split(' ')[0]
-            item_history_tree.insert(parent='', index='end', iid=count, values=(temp_date, item[1], item[5]))
+            item_history_tree.insert(parent='', index='end', iid=count, values=(temp_date, item[1], item[6]))
             count += 1
         item_history_tree.grid(row=1, column=0, stick=W)
         view_scrollbar = ttk.Scrollbar(right_frame, orient=VERTICAL, command=item_history_tree.yview)
@@ -966,23 +1119,6 @@ class WinWarehouse:
         view_scrollbar.grid(row=1, column=1, stick='ns')
         
 ### RECEIVING FUNCTIONS  
-    # def receiving_functions(self):
-    #     if self.user_info[7] != 'master':
-    #         return
-        
-    #     rec_func_popup = Toplevel(self.root)
-    #     rec_func_popup.geometry('180x180+600+400')
-    #     rec_func_popup.title('Receiving Functions')
-        
-    #     create_container_btn = Button(rec_func_popup, text='Create Container', width=17, command=lambda: self.create_container_popup(box=rec_func_popup))
-    #     create_container_btn.pack(pady=25)
-        
-    #     rec_container_btn = Button(rec_func_popup, text='Receive Container', width=17)
-    #     rec_container_btn.pack(pady=(0,25))
-        
-    #     rec_history_btn = Button(rec_func_popup, text='Receiving History', width=17)
-    #     rec_history_btn.pack()
-        
         
     def receiving_window(self):
         rec_win_popup = Toplevel(self.root)

@@ -5,7 +5,7 @@ from datetime import datetime
 from random import randint
 from werkzeug.security import generate_password_hash, check_password_hash
 
-warehouse = "testwarehouse.db"
+warehouse = "warehouse.db"
 
 def create_database():
     conn = sqlite3.connect(warehouse,
@@ -68,7 +68,7 @@ def create_database():
         location TEXT,
         container TEXT,
         log TEXT,
-        log_id INTEGER)""")
+        log_id TEXT)""")
 
     c.execute("""
     CREATE TABLE IF NOT EXISTS orderlog (
@@ -89,9 +89,161 @@ def create_database():
 
     conn.commit()
     conn.close() 
-    
+
 
 def pack_database():
+    conn = sqlite3.connect(warehouse)
+    c = conn.cursor()
+    c.execute("SELECT * FROM locations")
+    loc_list = c.fetchall()
+    c.execute("SELECT * FROM items")
+    item_list = c.fetchall()
+    c.execute("SELECT * FROM users")
+    user_list = c.fetchall()
+    print(user_list)
+    conn.commit()
+    conn.close()
+    if len(loc_list) != 0 and len(item_list) != 0:
+        print("DID NOT PACK DATABASE")
+        return
+    
+    # CREATE STARTER USER IF NO USERS EXIST #
+    if len(user_list) == 0:
+        new_pass = generate_password_hash('boss1234')
+        new_user = ('testboss', new_pass, 'testboss@twclimate.com', 100, 'Test Boss', 'TST', '024', 'master')
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute('INSERT INTO users (username, userpass, email, user_id, name_full, name_nick, branch_perms, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', new_user)
+        conn.commit()
+        conn.close()
+        
+    # ADDING LOCATIONS TO LOCATIONS TABLE #        
+    location_list = pack_locations()
+
+    # ADDING ITEMS TO BOTH TABLES #
+    pack_items(loc_list=location_list)
+    
+    
+def pack_locations():
+    r = rq.get('https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/locations').json()['locations']
+    location_list = {}
+    id_counter = 1
+    
+    for loc in r:
+        if loc['location'] in location_list:
+            continue
+        new_loc_id = id_counter
+        new_loc = loc['location']
+        new_loc_zone = loc['zone']
+        try:
+            new_loc_utn = loc['locUtn']
+        except KeyError:
+            new_loc_utn = ''
+        print(f'row info - {loc}')
+        loc_to_add = (new_loc_id, new_loc, new_loc_zone, new_loc_utn)
+        conn = sqlite3.connect(warehouse)
+        c = conn.cursor()
+        c.execute('INSERT INTO locations (loc_id, location, loc_zone, loc_utn) VALUES (?, ?, ?, ?)', loc_to_add)
+        conn.commit()
+        conn.close()
+        location_list[loc['location']] = id_counter
+        id_counter += 1
+        # print(f"location add - {loc['location']}")
+        add_note(note_type='loc', mode='first_add', location=new_loc)
+    
+    return location_list
+
+
+def pack_items(loc_list):
+    r = rq.get('https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/items').json()['items']
+    failed_to_add = []
+    item_list = []
+    item_locations = []
+    for row_item in r:
+        if row_item['location'] not in loc_list:
+            failed_to_add.append(row_item)
+            continue
+        if row_item['itemName'] == 'n/a' or row_item['itemName'] == '':
+            # print('empty item')
+            continue
+        item_count = item_list.count(row_item['itemName'])
+        if item_count == 0:
+            item_place = 'primary'
+        elif item_count == 1:
+            item_place = 'alt_one'
+        elif item_count == 2:
+            item_place = 'alt_two'
+        else:
+            item_place = 'none'
+        # item / item_num / item_type / item_brand / location / loc_id / alt_location_one / alt_location_two / weight / onhand / pallet_qty / item_history
+        item = row_item['itemName']
+        item_num = row_item['itemNumber']
+        itype = row_item['type']
+        ibrand = row_item['brand']
+        ilocation = row_item['location']
+        iloc_id = loc_list[ilocation]
+        iweight = row_item['weight']
+        ionhand = row_item['onHand']
+        ifull = row_item['fullPallet']
+        
+        if item_place == 'primary':
+            new_item = (item, item_num, itype, ibrand, ilocation, iloc_id, iweight, ionhand, ifull, ilocation)
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute('INSERT INTO items (item, item_num, item_type, item_brand, location, loc_id, weight, onhand, pallet_qty, item_history) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', new_item)
+            item_list.append(item)
+            conn.commit()
+            conn.close()
+            add_note(note_type='item', mode='first_add', item=item)
+
+        if item_place == 'alt_one':
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute("UPDATE items SET alt_location_one = ? WHERE item = ?", (ilocation, item))
+            item_list.append(item)
+            conn.commit()
+            conn.close()
+        
+        if item_place == 'alt_two':
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute("UPDATE items SET alt_location_two = ? WHERE item = ?", (ilocation, item))
+            item_list.append(item)
+            conn.commit()
+            conn.close()
+        
+        location_count = item_locations.count(ilocation)
+        if location_count == 0:
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute("UPDATE locations SET item = ? WHERE location = ?", (item, ilocation))
+            item_locations.append(ilocation)            
+            conn.commit()
+            conn.close()
+            
+        if location_count == 1:
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute("UPDATE locations SET alt_item_one = ? WHERE location = ?", (item, ilocation))
+            item_locations.append(ilocation)
+            conn.commit()
+            conn.close()
+
+        if location_count == 2:
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute("UPDATE locations SET alt_item_two = ? WHERE location = ?", (item, ilocation))
+            item_locations.append(ilocation)
+            conn.commit()
+            conn.close()            
+        
+        # if item_place != 'none':
+        #     print(f'item add - {item}')
+
+    print(f'failed to add ---- \n{failed_to_add}')
+    
+
+def old_pack_database():
     r = rq.get('https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/sheet1').json()['sheet1']
 
     conn = sqlite3.connect(warehouse)
@@ -485,7 +637,15 @@ def warehouse_inquiry(tag=0, type=0, search=0, **kwargs):
             conn.close()
             for loc in range(len(temp_list)):
                 loc_list += temp_list[loc]
-            return loc_list        
+            return loc_list
+        elif kwargs['mode'] == 'update_spread':
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute('SELECT loc_id, location, loc_zone, loc_utn FROM locations ORDER BY loc_id')
+            temp_list = c.fetchall()
+            conn.commit()
+            conn.close()
+            return temp_list
         else:
             e = isearch
             if e == "":
@@ -599,7 +759,6 @@ def warehouse_inquiry(tag=0, type=0, search=0, **kwargs):
                 except Exception as e:
                     to_add = ("",)
                     item_list[x] += to_add
-                    # print(f'{e}')
             return item_list
         else:
             isearch = f"%{isearch}%"
@@ -1567,14 +1726,14 @@ def add_note(note_type, user='master', mode='', **kwargs):
                                         sqlite3.PARSE_COLNAMES)
     c = conn.cursor()
     
-    xint = randint(1000000, 9999999)
-    print('adding note')
+    xint = str(randint(1000000, 9999999))
+    # print('adding note')
     c.execute("SELECT DISTINCT log_id FROM notes")
     log_ids = c.fetchall()
     if len(log_ids) != 0:
         if xint in log_ids[0]:
             while xint in log_ids[0]:
-                xint = randint(10000, 99999)
+                xint = str(randint(1000000, 9999999))
 
     if note_type == 'container':
         if mode == 'add':
@@ -1745,6 +1904,7 @@ def add_note(note_type, user='master', mode='', **kwargs):
             print('note added')
             return
         if mode == 'first_add':
+            xint = '0000000'
             item = kwargs['item']
             new_data = (today, note_user, note_type, item, f'{item} added to warehouse', xint)
             c.execute("INSERT INTO notes (date, user, type, item, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_data)
@@ -1840,6 +2000,7 @@ def add_note(note_type, user='master', mode='', **kwargs):
             # conn.close()
             # return
         if mode == 'first_add':
+            xint = '0000000'
             new_location = kwargs['location']
             new_data = (today, note_user, note_type, new_location, f'{new_location} added to warehouse', xint)
             c.execute("INSERT INTO notes (date, user, type, location, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_data)
