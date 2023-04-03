@@ -4,6 +4,9 @@ from tkinter import messagebox
 from datetime import datetime
 from random import randint
 from werkzeug.security import generate_password_hash, check_password_hash
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+
 
 warehouse = "warehouse.db"
 
@@ -123,50 +126,132 @@ def pack_database():
     # ADDING ITEMS TO BOTH TABLES #
     pack_items(loc_list=location_list)
     
+
+def prepare_spread_client(mode, sheet_name='', spreadsheet=''):
+    if mode == 'records':
+        scope = ["https://spreadsheets.google.com/feeds",'https://www.googleapis.com/auth/spreadsheets', "https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_name("testsheetfolder/creds.json", scope)
+        client = gspread.authorize(creds)
+        spreadsheet = client.open("war024")
+        worksheet = spreadsheet.worksheet(sheet_name)
+        data = worksheet.get_all_records()
+        return data
     
-def pack_locations():
-    r = rq.get('https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/locations').json()['locations']
+    if mode == 'sheet':
+        scope = ["https://spreadsheets.google.com/feeds",'https://www.googleapis.com/auth/spreadsheets', "https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
+        creds = ServiceAccountCredentials.from_json_keyfile_name("testsheetfolder/creds.json", scope)
+        client = gspread.authorize(creds)
+        spreadsheet = client.open("war024")
+        worksheet = spreadsheet.worksheet(sheet_name)
+        data = worksheet.get_all_records()
+        return (data, worksheet)
+    
+    if mode == 'spread_check':
+        if spreadsheet == 'Founding Spreadsheet':
+            scope = ["https://spreadsheets.google.com/feeds",'https://www.googleapis.com/auth/spreadsheets', "https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
+            creds = ServiceAccountCredentials.from_json_keyfile_name("testsheetfolder/creds.json", scope)
+            client = gspread.authorize(creds)
+            spreadsheet = client.open("war024")
+            loc_worksheet = spreadsheet.worksheet('locations')
+            loc_data = loc_worksheet.get_all_records()
+            item_worksheet = spreadsheet.worksheet('items')
+            item_data = item_worksheet.get_all_records()
+            if len(loc_data) < 2 or len(item_data) < 2:
+                return False
+            return (loc_data, item_data)        
+        
+        if spreadsheet == 'Updated Spreadsheet':
+            scope = ["https://spreadsheets.google.com/feeds",'https://www.googleapis.com/auth/spreadsheets', "https://www.googleapis.com/auth/drive.file","https://www.googleapis.com/auth/drive"]
+            creds = ServiceAccountCredentials.from_json_keyfile_name("testsheetfolder/creds.json", scope)
+            client = gspread.authorize(creds)
+            spreadsheet = client.open("war024")
+            loc_worksheet = spreadsheet.worksheet('locationsnew')
+            loc_data = loc_worksheet.get_all_records()
+            item_worksheet = spreadsheet.worksheet('itemsnew')
+            item_data = item_worksheet.get_all_records()
+            if len(loc_data) < 2 or len(item_data) < 2:
+                return False
+            return (loc_data, item_data)        
+    
+    
+def pack_locations(loc_data=''):
+    if loc_data == '':
+        data = prepare_spread_client(mode='records', sheet_name='locations')
+    else:
+        data = loc_data
     location_list = {}
     id_counter = 1
-    
-    for loc in r:
-        if loc['location'] in location_list:
+
+    for loc in data:
+        if loc['LOCATION'] in location_list:
             continue
         new_loc_id = id_counter
-        new_loc = loc['location']
-        new_loc_zone = loc['zone']
+        new_loc = loc['LOCATION']
+        new_loc_zone = loc['ZONE']
         try:
-            new_loc_utn = loc['locUtn']
+            new_loc_utn = loc['LOC UTN']
         except KeyError:
             new_loc_utn = ''
-        print(f'row info - {loc}')
+        # print(f'row info - {loc}')
         loc_to_add = (new_loc_id, new_loc, new_loc_zone, new_loc_utn)
         conn = sqlite3.connect(warehouse)
         c = conn.cursor()
         c.execute('INSERT INTO locations (loc_id, location, loc_zone, loc_utn) VALUES (?, ?, ?, ?)', loc_to_add)
         conn.commit()
         conn.close()
-        location_list[loc['location']] = id_counter
+        location_list[loc['LOCATION']] = id_counter
         id_counter += 1
-        # print(f"location add - {loc['location']}")
         add_note(note_type='loc', mode='first_add', location=new_loc)
     
     return location_list
+    
+    if pack_spread == 'Updated Spreadsheet':
+        data = prepare_spread_client(mode='records', sheet_name='locationsnew')
+        # r = rq.get('https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/locations').json()['locations']
+        location_list = {}
+        id_counter = 1
+        
+        for loc in data:
+            if loc['LOCATION'] in location_list:
+                continue
+            new_loc_id = id_counter
+            new_loc = loc['LOCATION']
+            new_loc_zone = loc['ZONE']
+            try:
+                new_loc_utn = loc['LOC UTN']
+            except KeyError:
+                new_loc_utn = ''
+            print(f'row info - {loc}')
+            loc_to_add = (new_loc_id, new_loc, new_loc_zone, new_loc_utn)
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute('INSERT INTO locations (loc_id, location, loc_zone, loc_utn) VALUES (?, ?, ?, ?)', loc_to_add)
+            conn.commit()
+            conn.close()
+            location_list[loc['LOCATION']] = id_counter
+            id_counter += 1
+            # print(f"location add - {loc['location']}")
+            add_note(note_type='loc', mode='first_add', location=new_loc)
+        
+        return location_list
 
 
-def pack_items(loc_list):
-    r = rq.get('https://api.sheety.co/1df786a24857eae9f8e9c6fdd9a4e227/warehouse/items').json()['items']
+def pack_items(loc_list, item_data=''):
+    if item_data == '':
+        data = prepare_spread_client(mode='records', sheet_name='items')
+    else:
+        data = item_data
     failed_to_add = []
     item_list = []
     item_locations = []
-    for row_item in r:
-        if row_item['location'] not in loc_list:
+    for row_item in data:
+        if row_item['LOCATION'] not in loc_list:
             failed_to_add.append(row_item)
             continue
-        if row_item['itemName'] == 'n/a' or row_item['itemName'] == '':
+        if row_item['ITEM NAME'] == 'n/a' or row_item['ITEM NAME'] == '':
             # print('empty item')
             continue
-        item_count = item_list.count(row_item['itemName'])
+        item_count = item_list.count(row_item['ITEM NAME'])
         if item_count == 0:
             item_place = 'primary'
         elif item_count == 1:
@@ -176,15 +261,18 @@ def pack_items(loc_list):
         else:
             item_place = 'none'
         # item / item_num / item_type / item_brand / location / loc_id / alt_location_one / alt_location_two / weight / onhand / pallet_qty / item_history
-        item = row_item['itemName']
-        item_num = row_item['itemNumber']
-        itype = row_item['type']
-        ibrand = row_item['brand']
-        ilocation = row_item['location']
+        item = row_item['ITEM NAME']
+        item_num = row_item['ITEM NUMBER']
+        itype = row_item['TYPE']
+        ibrand = row_item['BRAND']
+        ilocation = row_item['LOCATION']
         iloc_id = loc_list[ilocation]
-        iweight = row_item['weight']
-        ionhand = row_item['onHand']
-        ifull = row_item['fullPallet']
+        if row_item['WEIGHT'] == 'n/a':
+            iweight = 0
+        else:
+            iweight = row_item['WEIGHT']
+        ionhand = row_item['ON HAND']
+        ifull = row_item['FULL PALLET']
         
         if item_place == 'primary':
             new_item = (item, item_num, itype, ibrand, ilocation, iloc_id, iweight, ionhand, ifull, ilocation)
@@ -364,7 +452,7 @@ def old_pack_database():
             conn.close()
 
 
-def reset_database(note, order):
+def reset_database(note, order, reset_data):
     conn = sqlite3.connect(warehouse)
     c = conn.cursor()
     c.execute("DELETE FROM items")
@@ -375,7 +463,11 @@ def reset_database(note, order):
         c.execute("DELETE FROM orderlog")
     conn.commit()
     conn.close()   
-    pack_database()
+    # pack_database(spreadsheet=reset_data)
+    locations_data = reset_data[0]
+    items_data = reset_data[1]
+    new_loc_list = pack_locations(loc_data=locations_data)
+    pack_items(loc_list=new_loc_list, item_data=items_data)
     return
 
 
@@ -641,7 +733,7 @@ def warehouse_inquiry(tag=0, type=0, search=0, **kwargs):
         elif kwargs['mode'] == 'update_spread':
             conn = sqlite3.connect(warehouse)
             c = conn.cursor()
-            c.execute('SELECT loc_id, location, loc_zone, loc_utn FROM locations ORDER BY loc_id')
+            c.execute('SELECT location, loc_zone, loc_utn, loc_id FROM locations ORDER BY loc_id')
             temp_list = c.fetchall()
             conn.commit()
             conn.close()
@@ -727,9 +819,7 @@ def warehouse_inquiry(tag=0, type=0, search=0, **kwargs):
         conn.commit()
         conn.close()
         return location_info
-
-        
-
+      
     if itag == 'cc':
         conn = sqlite3.connect(warehouse)
         c = conn.cursor()
@@ -740,6 +830,14 @@ def warehouse_inquiry(tag=0, type=0, search=0, **kwargs):
         return location_list
 
     if itag == 'item_inv':
+        if isearch == "update_spread":
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute("SELECT location, item, item_brand, item_type, item_num, weight, pallet_qty, onhand, alt_location_one, alt_location_two FROM items ORDER BY loc_id")
+            item_list = c.fetchall()
+            conn.commit()
+            conn.close()
+            return item_list            
         if isearch == "":
             conn = sqlite3.connect(warehouse)
             c = conn.cursor()
@@ -1594,7 +1692,22 @@ def update_location_database(master_info='', box='', location_info='', primary_v
 
 
 ###
-def update_quantities(xitem='', master_info=''):
+def update_quantities(xitem='', master_info='', order_info=''):
+    if order_info != '':
+        for order_item in order_info:
+            old_info = warehouse_inquiry(tag='item', search=order_item[0])
+            old_onhand = old_info[9]
+            if old_onhand >= order_item[1]:
+                new_onhand = old_onhand - order_item[1]
+            else:
+                new_onhand = 0
+            conn = sqlite3.connect(warehouse)
+            c = conn.cursor()
+            c.execute("UPDATE items SET onhand = ? WHERE item = ?", (new_onhand, order_item[0]))
+            conn.commit()
+            conn.close()
+        return
+
     if xitem == '':
         print('updating all items')
         item_list = warehouse_inquiry()
@@ -1629,6 +1742,7 @@ def update_quantities(xitem='', master_info=''):
         conn.close()
         add_note(note_type='item', user=master_info, mode='edit', old_info=old_info)
     print('update complete')
+    return
 
 
 def container_function(mode='add', container='', **kwargs):
@@ -1717,7 +1831,6 @@ def container_function(mode='add', container='', **kwargs):
         return
         
 
-
 def add_note(note_type, user='master', mode='', **kwargs):
     today = datetime.now()
     note_user = user[5]
@@ -1804,6 +1917,7 @@ def add_note(note_type, user='master', mode='', **kwargs):
             c.execute("INSERT INTO notes (date, user, type, item, log, log_id) VALUES (?, ?, ?, ?, ?, ?)", new_note)
         conn.commit()
         conn.close()
+        update_quantities(order_info=item_list)
         order_box.destroy()
         print('databases updated successfully')
         return

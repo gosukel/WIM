@@ -9,7 +9,7 @@ import math
 import requests as rq
 import time
 from math import ceil
-from data_manager import check_credentials, warehouse_inquiry, update_item, update_location_database, add_item_to_database, update_quantities, edit_user_database, get_user_info, add_note, note_inquiry, reset_database, container_function, receive_item_to_database
+from data_manager import check_credentials, warehouse_inquiry, update_item, update_location_database, add_item_to_database, update_quantities, edit_user_database, get_user_info, add_note, note_inquiry, reset_database, container_function, receive_item_to_database, prepare_spread_client
 pp = pprint.PrettyPrinter(indent=4)
 
 
@@ -231,128 +231,85 @@ class WinWarehouse:
         status_label = Label(upload_frame, text='Ready')
         status_label.grid(row=1, column=0, stick=E)
         
-        upload_win_button = Button(upload_frame, text='Start Upload', command=lambda: self.upload_database(stat_label=status_label, up_btn=upload_win_button, up_lbox=upload_listbox), width=15)
+        upload_win_button = Button(upload_frame, text='Start Upload', command=lambda: self.upload_database(stat_label=status_label, up_btn=upload_win_button, up_lbox=upload_listbox, up_win=upload_window), width=15)
         upload_win_button.grid(row=2, column=0, stick=N)
 
     
-    def upload_database(self, stat_label, up_btn, up_lbox):
-        check_loc = rq.get(self.loc_new_sheet).json()['locationsnew']
-        check_items = rq.get(self.item_new_sheet).json()['itemsnew']
+    def upload_database(self, stat_label, up_btn, up_lbox, up_win):
+        #items
+        item_data = prepare_spread_client(mode='sheet', sheet_name="itemsnew")
+        item_spread = item_data[1]
+        item_records = item_data[0]
+        item_list = warehouse_inquiry(tag='item_inv', search='update_spread')
+        #locations
+        loc_data = prepare_spread_client(mode='sheet', sheet_name="locationsnew")
+        loc_spread = loc_data[1]
+        loc_records = loc_data[0]
         loc_list = warehouse_inquiry(tag='loc', mode='update_spread')
-        item_list = warehouse_inquiry(tag='item_inv')
         
-        def update_loc_spread(mode, loc_info='', cur_info=''):
+        def close_window(window):
+            window.destroy()
+        
+        def update_loc_spread(mode, loc_info='', cur_data='', cur_spread=''):
             if mode == 'delete':
                 # check if already empty
-                if len(cur_info) == 0:
+                if len(cur_data) <= 1:
                     up_lbox.insert(END, f"Locations Empty")
                     return
+
+                up_lbox.insert(END, f"Deleting Locations...")
+                end_num = len(cur_data) + 1
+                cur_spread.delete_rows(2, end_num)
+                up_lbox.insert(END, f"Locations Deleted!")
                 
-                r = cur_info
-                repeat = True
-                cycle_count = 1
-                while repeat:
-                    x = 2
-                    up_lbox.insert(END, f"Location Delete Cycle: {cycle_count}/10")
-                    for row in r:
-                        endpoint = f"{self.loc_new_sheet}/{x}"
-                        response = rq.delete(url=endpoint)
-                        x += 1
-                        time.sleep(.5)
-                    r = rq.get(self.loc_new_sheet).json()['locationsnew']
-                    if len(r) == 0:
-                        repeat = False
-                        up_lbox.insert(END, f"Finished Deleting Locations")
-                    else:
-                        cycle_count += 1
-                        # up_lbox.insert(END, f"Location Delete Cycle: {cycle_count}/10")
+
             if mode == 'add':
-                stat_label.config(text="Location Upload: 0%")
+                # stat_label.config(text="Uploading Location Info...")
                 loc_list = loc_info
                 max_len = len(loc_info)
                 prog_counter = 0
-                up_lbox.insert(END, f"Starting Location Upload")
-                for row in loc_list:
-                    to_add = {
-                        "locationsnew": {
-                            "location": row[1],
-                            "zone": row[2],
-                            "locUtn": row[3],
-                            "locId": row[0]
-                        }
-                    }
-                    response = rq.post(url=self.loc_new_sheet, json=to_add)
-                    up_lbox.insert(END, f"{row[1]} added")
-                    prog_counter += 1
-                    prog_percent = ceil(prog_counter/max_len*100)
-                    stat_label.config(text=f"Location Upload: {prog_percent}%")
-                    time.sleep(0.5)
-                up_lbox.insert(END, f"Location Upload Complete")
+                up_lbox.insert(END, f"Starting Location Upload...")
+                
+                cur_spread.insert_rows(values=loc_list, row=2)
+                
+                up_lbox.insert(END, f"Location Upload Complete!")
                 
         
-        def update_item_spread(mode, item_info='', cur_info=''):
+        def update_item_spread(mode, item_info='', cur_data='', cur_spread=''):
             if mode == 'delete':
                 
-                if len(cur_info) == 0:
+                if len(cur_data) == 0:
                     up_lbox.insert(END, f"Items Empty")
                 
-                r = cur_info
-                repeat = True
-                cycle_count = 1
-                while repeat:
-                    x = 2
-                    up_lbox.insert(END, f"Item Delete Cycle: {cycle_count}/10")
-                    for row in r:
-                        endpoint = f"{self.item_new_sheet}/{x}"
-                        response = rq.delete(url=endpoint)
-                        x += 1
-                        time.sleep(.5)
-                    r = rq.get(self.item_new_sheet).json()['itemsnew']
-                    if len(r) == 0:
-                        repeat = False
-                        up_lbox.insert(END, f"Finished Deleting Items")
-                    else:
-                        cycle_count += 1
-                    
+                up_lbox.insert(END, f"Deleting items...")
+                end_num = len(cur_data) + 1
+                cur_spread.delete_rows(2, end_num)
+                up_lbox.insert(END, f"Items Deleted!")                
+                
                         
             if mode == 'add':
-                stat_label.config(text="Item Upload: 0%")
+                # stat_label.config(text="Item Upload: 0%")
                 item_list = item_info
+                pprint.pprint(item_info, sort_dicts=False)
                 max_len = len(item_info)
                 prog_counter = 0
-                up_lbox.insert(END, f"Starting Item Upload")
-                for item in item_list:
-                    to_add = {
-                        "itemsnew": {
-                            "location": item[4],
-                            "itemName": item[0],
-                            "brand": item[3],
-                            "type": item[2],
-                            "itemNumber": item[1],
-                            "weight": item[8],
-                            "fullPallet": item[9],
-                            "onHand": item[7],
-                            "altLocationOne": item[5],
-                            "altLocationTwo": item[6]
-                        }
-                    }
-                    response = rq.post(url=self.item_new_sheet, json=to_add)
-                    up_lbox.insert(END, f"{item[0]} added")
-                    prog_counter += 1
-                    prog_percent = ceil(prog_counter/max_len*100)
-                    stat_label.config(text=f"Item Upload: {prog_percent}%")
-                    time.sleep(0.5)
-                up_lbox.insert(END, f"Item Upload Complete")                
-            pass
+                up_lbox.insert(END, f"Starting Item Upload...")
+                
+                cur_spread.insert_rows(values=item_list, row=2)
+            
+                up_lbox.insert(END, f"Item Upload Complete!")
+                stat_label.config(text="Finished!")
+                
+                up_btn.configure(text='Close', command=lambda: close_window(window=up_win))
         
         
-        update_loc_spread(mode='delete', cur_info=check_loc)
+        update_loc_spread(mode='delete', cur_data=loc_records, cur_spread=loc_spread)
         time.sleep(2)
-        update_item_spread(mode='delete', cur_info=check_items)
+        update_item_spread(mode='delete', cur_data=item_records, cur_spread=item_spread)
         time.sleep(2)
-        update_loc_spread(mode='add', loc_info=loc_list)
+        update_loc_spread(mode='add', loc_info=loc_list, cur_spread=loc_spread)
         time.sleep(2)
-        update_item_spread(mode='add', item_info=item_list)                       
+        update_item_spread(mode='add', item_info=item_list, cur_spread=item_spread)                       
                     
     def reset_warehouse_pop(self, box, kill_frames):
         if not messagebox.askokcancel(title='WARNING!', message='Warning! This action cannot be undone.  Are you sure you wish to completely reset to warehouse inventory?'):
@@ -360,44 +317,63 @@ class WinWarehouse:
         
         box.destroy()
         
-        check_pw_box = Toplevel(self.root)
-        check_pw_box.geometry('300x200')
-        check_pw_box.title('Confirm Password')
+        reset_check_box = Toplevel(self.root)
+        reset_check_box.geometry('300x240+500+400')
+        reset_check_box.title('Confirm Password')
         
-        check_pw_label = Label(check_pw_box, text='Please confirm user password')
+        check_pw_label = Label(reset_check_box, text='Please confirm user password')
         check_pw_label.pack(pady=(20,5))
         
-        check_pw_entry = Entry(check_pw_box, width=25, show='*')
+        check_pw_entry = Entry(reset_check_box, width=25, show='*')
         check_pw_entry.pack(pady=(5,5))
                
         note_check_var = IntVar()
-        note_check = Checkbutton(check_pw_box, text='Reset Note Log:', variable=note_check_var)
+        note_check = Checkbutton(reset_check_box, text='Reset Note Log', variable=note_check_var)
         note_check.pack(anchor=W, padx=(90,0))
         
         order_check_var = IntVar()
-        order_check = Checkbutton(check_pw_box, text='Reset Order Log:', variable=order_check_var)
-        order_check.pack(anchor=W, padx=(90,0), pady=(0,15))
+        order_check = Checkbutton(reset_check_box, text='Reset Order Log', variable=order_check_var)
+        order_check.pack(anchor=W, padx=(90,0), pady=(0,5))
         
-        check_pw_btn = Button(check_pw_box, text='Submit', width=21, command=lambda: self.reset_warehouse_func(box=check_pw_box, entry=check_pw_entry, note_var=note_check_var, order_var=order_check_var, frames=kill_frames))
+        spread_combo_var = StringVar()
+        spread_list = ['Founding Spreadsheet', 'Updated Spreadsheet']
+        spread_combo = ttk.Combobox(reset_check_box, values=spread_list, textvariable=spread_combo_var, state='readonly')
+        spread_combo.set("Pick a Spreadsheet")
+        spread_combo.pack(pady=(0,15))
+        
+        check_pw_btn = Button(reset_check_box, text='Submit', width=21, command=lambda: self.reset_warehouse_func(box=reset_check_box, entry=check_pw_entry, note_var=note_check_var, order_var=order_check_var, spread_var=spread_combo_var, frames=kill_frames))
         check_pw_btn.pack(pady=10)
-
-    def reset_warehouse_func(self, box, entry, note_var, order_var, frames):
-        userpass = entry.get()
         
+
+    def reset_warehouse_func(self, box, entry, note_var, order_var, spread_var, frames):
+        #check password
+        userpass = entry.get()
         pw_check = check_credentials(mode='pass', uname=self.user_info[0], upass=userpass)
         if not pw_check:
             messagebox.showerror(title="Error", message="Incorrect Password")
             return
-        if pw_check:
-            note_reset = note_var.get()
-            order_reset = order_var.get()
-            reset_database(note=note_reset, order=order_reset)
-            add_note(note_type='war_reset', user=self.user_info)
+        #check spreadsheet choice
+        spread_choice = spread_var.get()
+        print(spread_choice)
+        if spread_choice not in ['Founding Spreadsheet', 'Updated Spreadsheet']:
+            messagebox.showerror(title='Error', message='Invalid Spreadsheet')
             box.destroy()
-            self.logout(kill_frame=frames)
-            messagebox.showinfo(title='Warehouse', message='Database has been reset')
             return
-        pass
+        spreadsheet_data = prepare_spread_client(mode='spread_check', spreadsheet=spread_choice)
+        # check if spreadsheet is empty
+        if not spreadsheet_data:
+            messagebox.showerror(title='Error', message='Spreadsheet Data Incomplete, Cannot Update From Spreadsheet')
+            return
+        #check if extra tables get reset
+        note_reset = note_var.get()
+        order_reset = order_var.get()
+        reset_database(note=note_reset, order=order_reset, reset_data=spreadsheet_data)
+        add_note(note_type='war_reset', user=self.user_info)
+        box.destroy()
+        self.logout(kill_frame=frames)
+        messagebox.showinfo(title='Warehouse', message='Database has been reset')
+        return
+        
 
     def show_changelog(self, box):
         box.destroy()
@@ -2429,6 +2405,8 @@ class WinWarehouse:
         pallet_weight = pallets * 30
         final_weight = pallet_weight + item_weight
 
+        print(f'order items list --- {order_items_list}')
+
         order_notes = f'Pieces: {item_count} \nWeight: {final_weight} \nPallet Count: {pallets}'
 
         order_box = Toplevel(self.root)
@@ -2459,6 +2437,8 @@ class WinWarehouse:
         weight_count_value_label = Label(order_details_frame, text=f"{final_weight}")
         weight_count_value_label.grid(row=3, column=1, sticky=E)
 
+        # update_quantities(order_info=order_items_list)
+        
         save_order_btn = Button(order_details_frame, text='Save Order', width=10, command=lambda: add_note(note_type='order_create', user=self.user_info, order_num=order_number, item_notes=order_items, notes=order_notes, item_list=order_items_list, box=order_box))
         save_order_btn.grid(row=4, column=0, columnspan=2, pady=(50,0), sticky=N)
 
